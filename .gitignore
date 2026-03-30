@@ -9,3 +9,4 @@ target/
 .classpath
 .factorypath
 .vscode/
+test_output.txt
