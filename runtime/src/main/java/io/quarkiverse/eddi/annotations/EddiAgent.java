@@ -12,21 +12,25 @@ import java.lang.annotation.Target;
  * and generates JAX-RS resources that proxy requests to the specified EDDI agent.
  * <p>
  * Example:
- * <pre>{@code
- * @EddiAgent(id = "support-bot", path = "/api/support", streaming = true)
- * public class SupportEndpoint {
  *
- *     @OnMessage
- *     public void preProcess(EddiConversation conv, String message) {
- *         conv.addContext("department", "engineering");
+ * <pre>
+ * {
+ *     &#64;code
+ *     &#64;EddiAgent(id = "support-bot", path = "/api/support", streaming = true)
+ *     public class SupportEndpoint {
+ *
+ *         @OnMessage
+ *         public void preProcess(EddiConversation conv, String message) {
+ *             conv.addContext("department", "engineering");
+ *         }
  *     }
  * }
- * }</pre>
+ * </pre>
  *
  * This generates:
  * <ul>
- *   <li>{@code POST /api/support} — sends a message and returns the full response</li>
- *   <li>{@code POST /api/support/stream} — SSE streaming variant (if {@code streaming = true})</li>
+ * <li>{@code POST /api/support} — sends a message and returns the full response</li>
+ * <li>{@code POST /api/support/stream} — SSE streaming variant (if {@code streaming = true})</li>
  * </ul>
  */
 @Target(ElementType.TYPE)

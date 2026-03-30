@@ -13,6 +13,7 @@ import java.lang.annotation.Target;
  * can call them during conversation processing.
  * <p>
  * Example:
+ *
  * <pre>{@code
  * @EddiTool(description = "Look up order status by order ID")
  * public OrderStatus lookupOrder(@ToolArg(description = "The order ID") String orderId) {

@@ -1,38 +1,59 @@
 package io.quarkiverse.eddi;
 
-import io.quarkiverse.eddi.client.EddiAdminRestClient;
-import io.quarkiverse.eddi.client.EddiAgentRestClient;
-import io.quarkiverse.eddi.client.EddiGroupRestClient;
-import io.quarkiverse.eddi.client.EddiGroupRestClient.DiscussRequest;
-import io.quarkiverse.eddi.client.EddiSetupRestClient;
-import io.quarkiverse.eddi.config.EddiConfig;
-import io.quarkiverse.eddi.model.ConversationResult;
-import io.quarkiverse.eddi.model.GroupResult;
+import java.net.URI;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
+
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
-import java.net.URI;
-import java.util.*;
+import io.quarkiverse.eddi.client.*;
+import io.quarkiverse.eddi.client.EddiGroupRestClient.DiscussRequest;
+import io.quarkiverse.eddi.config.EddiConfig;
+import io.quarkiverse.eddi.model.*;
+import io.smallrye.mutiny.Uni;
 
 /**
  * The main entry point for the Quarkus EDDI SDK.
  * <p>
- * Inject this bean to interact with an EDDI server:
- * <pre>{@code
- * @Inject EddiClient eddi;
+ * Inject this bean to interact with an EDDI v6 server:
  *
- * // One-liner
+ * <pre>{@code
+ * @Inject
+ * EddiClient eddi;
+ *
+ * // One-liner (blocking convenience)
  * String answer = eddi.chat("my-agent", "Hello!");
+ *
+ * // Reactive
+ * Uni<ConversationResult> result = eddi.agent("my-agent")
+ *         .startConversationAsync()
+ *         .flatMap(conv -> conv.sayAsync("Hello!"));
  *
  * // Full lifecycle
  * Conversation conv = eddi.agent("my-agent").startConversation();
  * ConversationResult result = conv.say("Hello!");
+ *
+ * // Managed (intent-based, no conversation ID)
+ * ManagedConversation mc = eddi.managed("support").userId("user-1").build();
+ * ConversationResult result = mc.say("Help me!");
+ *
+ * // Fluent setup
+ * SetupResult result = eddi.setup()
+ *         .name("Support Bot").systemPrompt("You are helpful.")
+ *         .provider("openai").model("gpt-4o")
+ *         .deploy(true).create();
  * }</pre>
  */
 @ApplicationScoped
 public class EddiClient {
+
+    /** Default timeout for blocking operations. */
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
     @Inject
     EddiConfig config;
@@ -53,17 +74,27 @@ public class EddiClient {
     @RestClient
     EddiAdminRestClient adminClient;
 
-    // ─── One-liner API ─────────────────────────────
+    @Inject
+    @RestClient
+    EddiStreamingRestClient streamingClient;
+
+    @Inject
+    @RestClient
+    EddiManagedRestClient managedClient;
+
+    @Inject
+    @RestClient
+    EddiLogRestClient logClient;
+
+    @Inject
+    @RestClient
+    EddiCoordinatorRestClient coordinatorClient;
+
+    // ─── One-liner API (blocking convenience) ─────
 
     /**
      * Send a message to an agent in a single call.
      * Creates a new conversation, sends the message, and returns the response.
-     * <p>
-     * This is the simplest way to interact with an EDDI agent.
-     *
-     * @param agentId the EDDI agent ID
-     * @param message the user message
-     * @return the agent's text response
      */
     public String chat(String agentId, String message) {
         Conversation conv = agent(agentId).startConversation();
@@ -79,7 +110,15 @@ public class EddiClient {
         return conv.say(message);
     }
 
-    // ─── Agent builder ─────────────────────────────
+    /**
+     * Reactive one-liner — starts a conversation and sends a message.
+     */
+    public Uni<ConversationResult> chatAsync(String agentId, String message) {
+        return agent(agentId).startConversationAsync()
+                .flatMap(conv -> conv.sayAsync(message));
+    }
+
+    // ─── Agent builder ────────────────────────────
 
     /**
      * Start building an interaction with a specific agent.
@@ -88,7 +127,19 @@ public class EddiClient {
         return new AgentBuilder(agentId);
     }
 
-    // ─── Group discussions ─────────────────────────
+    // ─── Managed agent (intent-based) ─────────────
+
+    /**
+     * Start building a managed agent interaction by intent.
+     * <p>
+     * Managed agents auto-resolve the active conversation for a given
+     * intent/userId pair — no conversation ID management needed.
+     */
+    public ManagedAgentBuilder managed(String intent) {
+        return new ManagedAgentBuilder(intent);
+    }
+
+    // ─── Group discussions ────────────────────────
 
     /**
      * Start building a group discussion.
@@ -97,22 +148,78 @@ public class EddiClient {
         return new GroupBuilder(groupId);
     }
 
-    // ─── Agent setup ───────────────────────────────
+    // ─── Agent setup (fluent) ─────────────────────
 
     /**
-     * Start building a new agent setup request.
+     * Start building a standard agent setup request.
+     * <p>
+     * Call {@code .create()} on the builder to execute the setup:
+     *
+     * <pre>{@code
+     * SetupResult result = eddi.setup()
+     *         .name("Bot").systemPrompt("Be helpful.")
+     *         .provider("openai").model("gpt-4o")
+     *         .deploy(true).create();
+     * }</pre>
      */
-    public SetupBuilder setup() {
-        return new SetupBuilder();
+    public FluentSetupBuilder setup() {
+        return new FluentSetupBuilder();
     }
 
-    // ─── Admin ─────────────────────────────────────
+    /**
+     * Start building an API agent setup request (from OpenAPI spec).
+     * <p>
+     * Call {@code .create()} on the builder to execute the setup:
+     *
+     * <pre>{@code
+     * SetupResult result = eddi.setupApi()
+     *         .name("API Bot").systemPrompt("You call APIs.")
+     *         .openApiSpec(spec).deploy(true).create();
+     * }</pre>
+     */
+    public FluentApiSetupBuilder setupApi() {
+        return new FluentApiSetupBuilder();
+    }
+
+    /**
+     * Execute a standard agent setup directly.
+     */
+    public Uni<SetupResult> createAgent(SetupAgentRequest request) {
+        return setupClient.setupAgent(request);
+    }
+
+    /**
+     * Execute an API agent setup directly.
+     */
+    public Uni<SetupResult> createApiAgent(CreateApiAgentRequest request) {
+        return setupClient.createApiAgent(request);
+    }
+
+    // ─── Admin ────────────────────────────────────
 
     /**
      * Access admin operations (deploy, undeploy, status).
      */
     public AdminOps admin() {
         return new AdminOps();
+    }
+
+    // ─── Logs ─────────────────────────────────────
+
+    /**
+     * Access log administration operations.
+     */
+    public LogOps logs() {
+        return new LogOps();
+    }
+
+    // ─── Coordinator ──────────────────────────────
+
+    /**
+     * Access coordinator administration operations.
+     */
+    public CoordinatorOps coordinator() {
+        return new CoordinatorOps();
     }
 
     // ════════════════════════════════════════════════
@@ -126,6 +233,7 @@ public class EddiClient {
         private final String agentId;
         private String environment;
         private String userId;
+        private Map<String, Context> context;
 
         AgentBuilder(String agentId) {
             this.agentId = agentId;
@@ -141,24 +249,67 @@ public class EddiClient {
             return this;
         }
 
+        public AgentBuilder context(Map<String, Context> context) {
+            this.context = context;
+            return this;
+        }
+
         /**
-         * Start a new conversation with this agent.
+         * Start a new conversation (blocking, 30s timeout).
          */
         public Conversation startConversation() {
-            String env = environment != null ? environment : config.environment();
-            Response response = agentClient.startConversation(agentId, env, userId)
-                    .await().indefinitely();
+            return startConversationAsync().await().atMost(DEFAULT_TIMEOUT);
+        }
 
-            String location = response.getHeaderString("Location");
-            String conversationId = extractIdFromUri(location);
-            return new Conversation(conversationId, agentId, agentClient);
+        /**
+         * Start a new conversation (reactive).
+         */
+        public Uni<Conversation> startConversationAsync() {
+            String env = environment != null ? environment : config.environment();
+            Uni<Response> startUni;
+
+            if (context != null && !context.isEmpty()) {
+                startUni = agentClient.startConversationWithContext(agentId, env, userId, context);
+            } else {
+                startUni = agentClient.startConversation(agentId, env, userId);
+            }
+
+            return startUni.map(response -> {
+                String location = response.getHeaderString("Location");
+                String conversationId = extractIdFromUri(location);
+                return new Conversation(conversationId, agentId, agentClient, streamingClient);
+            });
         }
 
         /**
          * Resume an existing conversation.
          */
         public Conversation conversation(String conversationId) {
-            return new Conversation(conversationId, agentId, agentClient);
+            return new Conversation(conversationId, agentId, agentClient, streamingClient);
+        }
+    }
+
+    /**
+     * Builder for managed agent interactions (intent-based).
+     */
+    public class ManagedAgentBuilder {
+        private final String intent;
+        private String userId;
+
+        ManagedAgentBuilder(String intent) {
+            this.intent = intent;
+        }
+
+        public ManagedAgentBuilder userId(String userId) {
+            this.userId = userId;
+            return this;
+        }
+
+        /**
+         * Build the managed conversation wrapper.
+         */
+        public ManagedConversation build() {
+            return new ManagedConversation(intent, userId, managedClient);
         }
     }
 
@@ -179,134 +330,350 @@ public class EddiClient {
         }
 
         /**
-         * Start a group discussion with the given question.
+         * Start a group discussion (reactive).
          */
-        @SuppressWarnings("unchecked")
-        public GroupResult discuss(String question) {
-            var request = new DiscussRequest(question, userId);
+        public Uni<Response> discussAsync(String question) {
+            return groupClient.discuss(groupId, new DiscussRequest(question, userId));
+        }
 
-            Response response = groupClient.discuss(groupId, request)
-                    .await().indefinitely();
-            Map<String, Object> body = response.readEntity(Map.class);
+        /**
+         * Start a group discussion (blocking, 30s timeout).
+         */
+        public Response discuss(String question) {
+            return discussAsync(question).await().atMost(DEFAULT_TIMEOUT);
+        }
+    }
 
-            return new GroupResult(
-                    groupId,
-                    (String) body.get("groupConversationId"),
-                    question,
-                    (List<Map<String, Object>>) body.get("transcript"),
-                    (String) body.get("synthesis"));
+    // ════════════════════════════════════════════════
+    //  Fluent setup builders (D2)
+    // ════════════════════════════════════════════════
+
+    /**
+     * Fluent builder for standard agent setup with terminal {@code create()} method.
+     */
+    public class FluentSetupBuilder extends SetupAgentRequest.Builder {
+
+        /**
+         * Execute the setup and return the result (reactive).
+         */
+        public Uni<SetupResult> createAsync() {
+            return setupClient.setupAgent(build());
+        }
+
+        /**
+         * Execute the setup and return the result (blocking, 30s timeout).
+         */
+        public SetupResult create() {
+            return createAsync().await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        // Override all setters to return FluentSetupBuilder for chaining
+        @Override
+        public FluentSetupBuilder name(String name) {
+            super.name(name);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder systemPrompt(String s) {
+            super.systemPrompt(s);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder provider(String p) {
+            super.provider(p);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder model(String m) {
+            super.model(m);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder apiKey(String k) {
+            super.apiKey(k);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder baseUrl(String u) {
+            super.baseUrl(u);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder introMessage(String m) {
+            super.introMessage(m);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder enableBuiltInTools(Boolean b) {
+            super.enableBuiltInTools(b);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder builtInToolsWhitelist(String w) {
+            super.builtInToolsWhitelist(w);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder enableQuickReplies(Boolean b) {
+            super.enableQuickReplies(b);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder enableSentimentAnalysis(Boolean b) {
+            super.enableSentimentAnalysis(b);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder mcpServerUrls(String u) {
+            super.mcpServerUrls(u);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder deploy(Boolean d) {
+            super.deploy(d);
+            return this;
+        }
+
+        @Override
+        public FluentSetupBuilder environment(String e) {
+            super.environment(e);
+            return this;
         }
     }
 
     /**
-     * Builder for one-command agent setup.
+     * Fluent builder for API agent setup with terminal {@code create()} method.
      */
-    public class SetupBuilder {
-        private final Map<String, Object> params = new LinkedHashMap<>();
+    public class FluentApiSetupBuilder extends CreateApiAgentRequest.Builder {
 
-        public SetupBuilder name(String name) {
-            params.put("name", name);
-            return this;
-        }
-
-        public SetupBuilder systemPrompt(String prompt) {
-            params.put("systemPrompt", prompt);
-            return this;
-        }
-
-        public SetupBuilder provider(String provider) {
-            params.put("provider", provider);
-            return this;
-        }
-
-        public SetupBuilder model(String model) {
-            params.put("model", model);
-            return this;
-        }
-
-        public SetupBuilder apiKey(String apiKey) {
-            params.put("apiKey", apiKey);
-            return this;
-        }
-
-        public SetupBuilder baseUrl(String baseUrl) {
-            params.put("baseUrl", baseUrl);
-            return this;
-        }
-
-        public SetupBuilder introMessage(String message) {
-            params.put("introMessage", message);
-            return this;
-        }
-
-        public SetupBuilder enableBuiltInTools(boolean enable) {
-            params.put("enableBuiltInTools", enable);
-            return this;
-        }
-
-        public SetupBuilder mcpServers(String servers) {
-            params.put("mcpServers", servers);
-            return this;
-        }
-
-        public SetupBuilder deploy() {
-            params.put("deploy", true);
-            return this;
-        }
-
-        public SetupBuilder deploy(boolean deploy) {
-            params.put("deploy", deploy);
-            return this;
-        }
-
-        public SetupBuilder environment(String env) {
-            params.put("environment", env);
-            return this;
+        /**
+         * Execute the API agent setup and return the result (reactive).
+         */
+        public Uni<SetupResult> createAsync() {
+            return setupClient.createApiAgent(build());
         }
 
         /**
-         * Execute the setup and return the created agent ID.
+         * Execute the API agent setup and return the result (blocking, 30s timeout).
          */
-        public String create() {
-            Response response = setupClient.setupAgent(params)
-                    .await().indefinitely();
-            String location = response.getHeaderString("Location");
-            return extractIdFromUri(location);
+        public SetupResult create() {
+            return createAsync().await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        // Override all setters to return FluentApiSetupBuilder for chaining
+        @Override
+        public FluentApiSetupBuilder name(String n) {
+            super.name(n);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder systemPrompt(String s) {
+            super.systemPrompt(s);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder openApiSpec(String s) {
+            super.openApiSpec(s);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder provider(String p) {
+            super.provider(p);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder model(String m) {
+            super.model(m);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder apiKey(String k) {
+            super.apiKey(k);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder apiBaseUrl(String u) {
+            super.apiBaseUrl(u);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder apiAuth(String a) {
+            super.apiAuth(a);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder endpoints(String e) {
+            super.endpoints(e);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder enableQuickReplies(Boolean b) {
+            super.enableQuickReplies(b);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder enableSentimentAnalysis(Boolean b) {
+            super.enableSentimentAnalysis(b);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder deploy(Boolean d) {
+            super.deploy(d);
+            return this;
+        }
+
+        @Override
+        public FluentApiSetupBuilder environment(String e) {
+            super.environment(e);
+            return this;
         }
     }
+
+    // ════════════════════════════════════════════════
+    //  Operations facades
+    // ════════════════════════════════════════════════
 
     /**
      * Admin operations for deploy/undeploy/status.
      */
     public class AdminOps {
 
+        public Uni<Response> deployAsync(String agentId, int version) {
+            return deployAsync(agentId, version, config.environment());
+        }
+
+        public Uni<Response> deployAsync(String agentId, int version, String environment) {
+            return adminClient.deployAgent(environment, agentId, version, true, false);
+        }
+
         public void deploy(String agentId, int version) {
-            deploy(agentId, version, config.environment());
+            deployAsync(agentId, version).await().atMost(DEFAULT_TIMEOUT);
         }
 
         public void deploy(String agentId, int version, String environment) {
-            adminClient.deployAgent(environment, agentId, version, true, false)
-                    .await().indefinitely();
+            deployAsync(agentId, version, environment).await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        /**
+         * Deploy and wait for completion (up to 30s server-side).
+         */
+        public Uni<Response> deployAndWaitAsync(String agentId, int version, String environment) {
+            return adminClient.deployAgent(environment, agentId, version, true, true);
+        }
+
+        public Uni<Response> undeployAsync(String agentId, int version) {
+            return undeployAsync(agentId, version, config.environment());
+        }
+
+        public Uni<Response> undeployAsync(String agentId, int version, String environment) {
+            return adminClient.undeployAgent(environment, agentId, version, false, false);
         }
 
         public void undeploy(String agentId, int version) {
-            undeploy(agentId, version, config.environment());
+            undeployAsync(agentId, version).await().atMost(DEFAULT_TIMEOUT);
         }
 
         public void undeploy(String agentId, int version, String environment) {
-            adminClient.undeployAgent(environment, agentId, version, false, false)
-                    .await().indefinitely();
+            undeployAsync(agentId, version, environment).await().atMost(DEFAULT_TIMEOUT);
         }
 
-        @SuppressWarnings("unchecked")
-        public List<Map<String, Object>> listDeployed() {
-            return listDeployed(config.environment());
+        public Uni<List<AgentDeploymentStatus>> listDeployedAsync() {
+            return listDeployedAsync(config.environment());
         }
 
-        @SuppressWarnings("unchecked")
-        public List<Map<String, Object>> listDeployed(String environment) {
-            return adminClient.getDeploymentStatuses(environment)
-                    .await().indefinitely();
+        public Uni<List<AgentDeploymentStatus>> listDeployedAsync(String environment) {
+            return adminClient.getDeploymentStatuses(environment);
+        }
+
+        public List<AgentDeploymentStatus> listDeployed() {
+            return listDeployedAsync().await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        public List<AgentDeploymentStatus> listDeployed(String environment) {
+            return listDeployedAsync(environment).await().atMost(DEFAULT_TIMEOUT);
+        }
+    }
+
+    /**
+     * Log administration operations.
+     */
+    public class LogOps {
+
+        public Uni<List<LogEntry>> recentAsync() {
+            return recentAsync(null, null, "INFO", 100);
+        }
+
+        public Uni<List<LogEntry>> recentAsync(String agentId, String conversationId, String level, int limit) {
+            return logClient.getRecentLogs(agentId, conversationId, level, limit);
+        }
+
+        public List<LogEntry> recent() {
+            return recentAsync().await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        public Uni<List<Map<String, Object>>> historyAsync(String agentId) {
+            return logClient.getHistoryLogs(null, agentId, null, null, null, null, 0, 100);
+        }
+
+        public Uni<Map<String, String>> instanceIdAsync() {
+            return logClient.getInstanceId();
+        }
+    }
+
+    /**
+     * Coordinator administration operations.
+     */
+    public class CoordinatorOps {
+
+        public Uni<CoordinatorStatus> statusAsync() {
+            return coordinatorClient.getStatus();
+        }
+
+        public CoordinatorStatus status() {
+            return statusAsync().await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        public Uni<List<DeadLetterEntry>> deadLettersAsync() {
+            return coordinatorClient.getDeadLetters();
+        }
+
+        public List<DeadLetterEntry> deadLetters() {
+            return deadLettersAsync().await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        public Uni<Void> replayAsync(String entryId) {
+            return coordinatorClient.replayDeadLetter(entryId);
+        }
+
+        public Uni<Void> discardAsync(String entryId) {
+            return coordinatorClient.discardDeadLetter(entryId);
+        }
+
+        public Uni<Integer> purgeAsync() {
+            return coordinatorClient.purgeDeadLetters();
         }
     }
 
@@ -314,14 +681,13 @@ public class EddiClient {
     //  Utilities
     // ════════════════════════════════════════════════
 
-    private static String extractIdFromUri(String uriString) {
+    static String extractIdFromUri(String uriString) {
         if (uriString == null || uriString.isBlank()) {
             throw new IllegalStateException("EDDI returned no Location header");
         }
         URI uri = URI.create(uriString);
         String path = uri.getPath();
         String[] segments = path.split("/");
-        // ID is the last path segment
         return segments[segments.length - 1];
     }
 }

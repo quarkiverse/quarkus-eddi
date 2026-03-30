@@ -12,6 +12,7 @@ import java.lang.annotation.Target;
  * The method receives an {@code EddiConversation} and the user's message string.
  * <p>
  * Example:
+ *
  * <pre>{@code
  * @OnMessage
  * public void preProcess(EddiConversation conv, String message) {

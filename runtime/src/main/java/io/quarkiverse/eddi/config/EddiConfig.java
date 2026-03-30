@@ -1,9 +1,9 @@
 package io.quarkiverse.eddi.config;
 
+import java.util.Optional;
+
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
-
-import java.util.Optional;
 
 /**
  * Configuration for the Quarkus EDDI extension.
@@ -54,6 +54,11 @@ public interface EddiConfig {
     McpBridgeConfig mcpBridge();
 
     /**
+     * Health check configuration.
+     */
+    HealthConfig health();
+
+    /**
      * Dev Services sub-configuration.
      */
     interface DevServicesConfig {
@@ -100,5 +105,17 @@ public interface EddiConfig {
          */
         @WithDefault("*")
         String agents();
+    }
+
+    /**
+     * Health check sub-configuration.
+     */
+    interface HealthConfig {
+
+        /**
+         * Whether the EDDI readiness health check is enabled.
+         */
+        @WithDefault("true")
+        boolean enabled();
     }
 }

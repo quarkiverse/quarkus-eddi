@@ -10,6 +10,7 @@ import java.lang.annotation.Target;
  * metadata for MCP tool schema generation.
  * <p>
  * Example:
+ *
  * <pre>{@code
  * @EddiTool(description = "Look up order status")
  * public OrderStatus lookupOrder(@ToolArg(description = "The order ID") String orderId) {

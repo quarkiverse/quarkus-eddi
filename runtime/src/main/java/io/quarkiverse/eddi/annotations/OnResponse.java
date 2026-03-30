@@ -12,6 +12,7 @@ import java.lang.annotation.Target;
  * The method receives an {@code EddiConversation} and the {@code ConversationResult}.
  * <p>
  * Example:
+ *
  * <pre>{@code
  * @OnResponse
  * public void postProcess(EddiConversation conv, ConversationResult result) {

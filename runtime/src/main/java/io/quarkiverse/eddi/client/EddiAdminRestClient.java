@@ -1,21 +1,24 @@
 package io.quarkiverse.eddi.client;
 
-import io.smallrye.mutiny.Uni;
+import java.util.List;
+
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+
+import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
-import java.util.List;
-import java.util.Map;
+import io.quarkiverse.eddi.model.AgentDeploymentStatus;
+import io.smallrye.mutiny.Uni;
 
 /**
- * MicroProfile REST Client for EDDI's administration/deployment API.
+ * MicroProfile REST Client for EDDI v6's agent administration API.
  * <p>
- * Maps to EDDI's {@code /administration} endpoints.
- * All parameters match the server-side {@code IRestAgentAdministration} interface.
+ * Maps 1:1 to EDDI's {@code IRestAgentAdministration} at {@code /administration}.
  */
 @RegisterRestClient(configKey = "eddi")
+@RegisterProvider(EddiApiKeyFilter.class)
 @Path("/administration")
 public interface EddiAdminRestClient {
 
@@ -35,11 +38,11 @@ public interface EddiAdminRestClient {
             @PathParam("agentId") String agentId,
             @QueryParam("version") Integer version,
             @QueryParam("endAllActiveConversations") @DefaultValue("false") Boolean endAllActiveConversations,
-            @QueryParam("undeployThisAndAllPreviousAgentVersions") @DefaultValue("false") Boolean undeployAllPrevious);
+            @QueryParam("undeployThisAndAllPreviousAgentVersions") @DefaultValue("false") Boolean undeployAll);
 
     @GET
     @Path("/{environment}/deploymentstatus/{agentId}")
-    @Produces({MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN})
+    @Produces({ MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN })
     Uni<Response> getDeploymentStatus(
             @PathParam("environment") String environment,
             @PathParam("agentId") String agentId,
@@ -49,6 +52,6 @@ public interface EddiAdminRestClient {
     @GET
     @Path("/{environment}/deploymentstatus")
     @Produces(MediaType.APPLICATION_JSON)
-    Uni<List<Map<String, Object>>> getDeploymentStatuses(
+    Uni<List<AgentDeploymentStatus>> getDeploymentStatuses(
             @PathParam("environment") @DefaultValue("production") String environment);
 }

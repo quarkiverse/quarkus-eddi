@@ -3,7 +3,7 @@
 [![Build](https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml/badge.svg)](https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml)
 <!-- [![Maven Central](https://img.shields.io/maven-central/v/io.quarkiverse.eddi/quarkus-eddi)](https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi) -->
 
-A [Quarkiverse](https://github.com/quarkiverse) extension for integrating the [EDDI](https://github.com/labsai/EDDI) conversational AI platform into Quarkus applications.
+A [Quarkiverse](https://github.com/quarkiverse) extension for integrating the [EDDI](https://github.com/labsai/EDDI) conversational AI platform into Quarkus applications. Built exclusively for **EDDI v6**.
 
 ## ✨ Features
 
@@ -11,11 +11,12 @@ A [Quarkiverse](https://github.com/quarkiverse) extension for integrating the [E
 |---|---|
 | 🚀 **Dev Services** | Auto-starts EDDI + MongoDB during `quarkus dev` — zero config |
 | 💬 **Fluent Client** | `@Inject EddiClient eddi;` → `eddi.chat("agent", "Hello!")` |
-| ⚡ **SSE Streaming** | `Multi<StreamToken>` and callback-based `StreamListener` |
+| ⚡ **SSE Streaming** | `Multi<StreamToken>` with full event types (`token`, `task_start`, `done`, `error`) |
+| 🤖 **Managed Agents** | Intent-based conversations — no conversation ID management needed |
 | 🔗 **@EddiAgent** | Declaratively wire agents to REST/SSE endpoints at build time |
 | 🛠️ **@EddiTool** | Expose CDI methods as MCP tools EDDI can call back |
-| 🖥️ **Dev UI** | Chat with agents in the Quarkus Dev UI |
-| 🏗️ **Native Image** | GraalVM native compilation support |
+| 🔐 **API Key Auth** | Auto-propagated Bearer token via `quarkus.eddi.api-key` |
+| 💚 **Health Check** | Async readiness probe for EDDI connectivity |
 
 ## 📦 Installation
 
@@ -52,59 +53,93 @@ public void conversation() {
     // Start a conversation
     Conversation conv = eddi.agent("my-agent-id").startConversation();
 
-    // Send messages
+    // Send messages (blocking, 30s timeout)
     ConversationResult result = conv.say("Hello!");
     String reply = result.text();
     List<String> quickReplies = result.quickReplies();
 
     // Send with context
     ConversationResult withContext = conv.sayWithContext("Book a flight",
-        Map.of("userId", new Context(Context.ContextType.string, "user-123")));
+        Map.of("userId", Context.of("user-123")));
+
+    // Undo / Redo
+    if (conv.isUndoAvailableAsync().await().atMost(Duration.ofSeconds(5))) {
+        conv.undo();
+    }
 
     // End the conversation
     conv.end();
 }
 ```
 
+### Reactive API
+
+Every method has an `*Async()` variant returning `Uni<T>`:
+
+```java
+eddi.agent("my-agent")
+    .startConversationAsync()
+    .flatMap(conv -> conv.sayAsync("Hello!"))
+    .subscribe().with(result -> log.info(result.text()));
+```
+
 ### SSE Streaming
 
 ```java
-// Reactive (Mutiny Multi)
+// Reactive (Mutiny Multi) — event names are preserved from the server
 Multi<StreamToken> tokens = conv.sayStreaming("Tell me a story");
-tokens.subscribe().with(
-    token -> System.out.print(token.text()),
-    error -> log.error("Stream failed", error)
-);
+tokens.subscribe().with(token -> {
+    if (token.isToken())  System.out.print(token.text());
+    if (token.isDone())   System.out.println("\n[Complete]");
+    if (token.isError())  System.err.println("Error: " + token.text());
+});
 
 // Callback-style
 conv.sayStreaming("Explain quantum physics", new StreamListener() {
-    @Override public void onToken(String text) { System.out.print(text); }
-    @Override public void onThinking()         { System.out.print("🤔"); }
-    @Override public void onDone(ConversationResult result) { /* done */ }
+    @Override public void onToken(String text && System.out.print(text); }
+    @Override public void onComplete(ConversationResult result) { /* done */ }
+    @Override public void onError(Throwable error) { log.error("Failed", error); }
 });
 ```
 
-### Group Discussions (Multi-Agent Debates)
+### Managed Agents (Intent-based)
+
+No conversation ID management — EDDI resolves the active conversation by intent + userId:
 
 ```java
-GroupResult result = eddi.group("architect-panel")
-    .userId("user-123")
-    .discuss("Monolith vs microservices?");
-
-System.out.println(result.synthesis());
+ManagedConversation mc = eddi.managed("support").userId("user-123").build();
+ConversationResult result = mc.say("I need help with my order");
+mc.end();
 ```
 
-### One-Command Agent Setup
+### Fluent Agent Setup
 
 ```java
-String agentId = eddi.setup()
+// Standard agent
+SetupResult result = eddi.setup()
     .name("Customer Support Bot")
     .systemPrompt("You are a helpful support agent for Acme Corp...")
     .provider("openai").model("gpt-4o")
     .apiKey(config.openaiKey())
     .enableBuiltInTools(true)
-    .deploy()
+    .deploy(true)
     .create();
+
+// API agent from OpenAPI spec
+SetupResult apiResult = eddi.setupApi()
+    .name("API Bot")
+    .systemPrompt("You call APIs on behalf of users.")
+    .openApiSpec(openApiYaml)
+    .deploy(true)
+    .create();
+```
+
+### Group Discussions (Multi-Agent Debates)
+
+```java
+Response result = eddi.group("architect-panel")
+    .userId("user-123")
+    .discuss("Monolith vs microservices?");
 ```
 
 ### @EddiAgent — Declarative Endpoint Wiring
@@ -116,17 +151,19 @@ Annotate a class to auto-generate REST + SSE endpoints that proxy to an EDDI age
 public class SupportEndpoint {
 
     @OnMessage
-    public void preProcess(EddiConversation conv, String message) {
-        conv.addContext("department", "engineering");
+    public String preProcess(String message) {
+        // Optionally transform the message before sending to EDDI
+        return message + " [department: engineering]";
     }
 
     @OnResponse
-    public void postProcess(EddiConversation conv, ConversationResult result) {
-        metricsService.recordResponse(conv.agentId(), result);
+    public void postProcess(ConversationResult result) {
+        metricsService.recordResponse(result);
     }
 }
-// Generates: POST /api/support       → talk to support-bot
-//            POST /api/support/stream → SSE streaming
+// Generates: POST /api/support              → talk to support-bot
+//            POST /api/support/stream        → SSE streaming
+//            Query param: ?userId=anonymous  → per-user conversation reuse
 ```
 
 ### @EddiTool — MCP Tool Bridge
@@ -155,6 +192,9 @@ All properties are under the `quarkus.eddi` namespace:
 # EDDI server URL (auto-configured by Dev Services in dev mode)
 quarkus.eddi.url=http://localhost:7070
 
+# API key for authentication
+quarkus.eddi.api-key=your-api-key
+
 # Default deployment environment
 quarkus.eddi.environment=production
 
@@ -162,15 +202,9 @@ quarkus.eddi.environment=production
 quarkus.eddi.devservices.enabled=true           # default: true in dev/test
 quarkus.eddi.devservices.image=labsai/eddi:6
 quarkus.eddi.devservices.mongodb-image=mongo:6.0
-quarkus.eddi.devservices.seed-demo-agent=false
 
-# MCP Tool Bridge
-quarkus.eddi.mcp-bridge.enabled=true
-quarkus.eddi.mcp-bridge.agents=*               # which agents see your tools
-
-# Timeouts
-quarkus.eddi.connect-timeout-ms=5000
-quarkus.eddi.read-timeout-ms=30000
+# Health check
+quarkus.eddi.health.enabled=true
 ```
 
 ## 🏛️ Architecture
@@ -190,23 +224,9 @@ quarkus.eddi.read-timeout-ms=30000
           │                 │                  │
           ▼                 ▼                  ▼
     ┌─────────────────────────────────────────────────┐
-    │              EDDI Server                         │
+    │              EDDI v6 Server                      │
     │  Conversations │ Streaming │ Groups │ MCP Client │
     └─────────────────────────────────────────────────┘
-```
-
-- **EddiClient** → calls EDDI's REST API for conversations, setup, admin
-- **@EddiAgent** → build-time generated JAX-RS endpoints that proxy to EDDI
-- **@EddiTool** → your CDI methods exposed as MCP tools; EDDI discovers and invokes them
-
-## 📁 Project Structure
-
-```
-quarkus-eddi/
-├── runtime/        → Runtime CDI beans, REST clients, annotations, models
-├── deployment/     → Build-time processors (Dev Services, annotation scanning)
-├── integration-tests/  → WireMock + Testcontainers tests
-└── docs/           → Antora documentation
 ```
 
 ## 🔗 Related Projects
