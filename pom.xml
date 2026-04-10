@@ -23,19 +23,34 @@
         <license>
             <name>Apache License, Version 2.0</name>
             <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
         </license>
     </licenses>
 
+    <developers>
+        <developer>
+            <id>labsai</id>
+            <name>labs.ai</name>
+            <organization>labs.ai</organization>
+            <organizationUrl>https://labs.ai</organizationUrl>
+        </developer>
+    </developers>
+
     <scm>
-        <connection>scm:git:git://github.com/quarkiverse/quarkus-eddi.git</connection>
-        <developerConnection>scm:git:ssh://github.com:quarkiverse/quarkus-eddi.git</developerConnection>
+        <connection>scm:git:git@github.com:quarkiverse/quarkus-eddi.git</connection>
+        <developerConnection>scm:git:git@github.com:quarkiverse/quarkus-eddi.git</developerConnection>
         <url>https://github.com/quarkiverse/quarkus-eddi</url>
+        <tag>HEAD</tag>
     </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/quarkiverse/quarkus-eddi/issues</url>
+    </issueManagement>
 
     <modules>
         <module>runtime</module>
         <module>deployment</module>
-        <!-- <module>integration-tests</module> -->
     </modules>
 
     <properties>

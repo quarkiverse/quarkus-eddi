@@ -35,24 +35,30 @@
 
 ```
 quarkus-eddi/
+├── .github/
+│   ├── workflows/build.yml       → CI: matrix build (JDK 21, Ubuntu + Windows)
+│   ├── workflows/release.yml     → Quarkiverse release pipeline
+│   └── project.yml               → Release version metadata
+│
 ├── runtime/                    → Maven artifact: quarkus-eddi
 │   └── io.quarkiverse.eddi/
 │       ├── EddiClient.java       → Main CDI facade (@ApplicationScoped)
 │       ├── Conversation.java     → Conversation lifecycle wrapper
+│       ├── ManagedConversation.java → Intent-based conversation (no ID mgmt)
+│       ├── EddiHealthCheck.java  → Async readiness probe
 │       ├── StreamListener.java   → SSE callback interface
 │       ├── annotations/          → @EddiAgent, @OnMessage, @OnResponse, @EddiTool, @ToolArg
-│       ├── client/               → 4 @RegisterRestClient interfaces
+│       ├── client/               → 8 @RegisterRestClient interfaces + API key filter
 │       ├── config/               → EddiConfig (@ConfigMapping quarkus.eddi.*)
-│       └── model/                → ConversationResult, StreamToken, GroupResult
+│       └── model/                → ConversationResult, StreamToken, InputData, etc.
 │
-├── deployment/                 → Maven artifact: quarkus-eddi-deployment
-│   └── io.quarkiverse.eddi.deployment/
-│       ├── EddiProcessor.java                   → Feature registration
-│       ├── EddiDevServicesProcessor.java         → Docker container management
-│       ├── EddiAgentAnnotationProcessor.java     → @EddiAgent build-time scan
-│       └── EddiMcpBridgeProcessor.java           → @EddiTool build-time scan
-│
-└── integration-tests/          → WireMock + Testcontainers tests
+└── deployment/                 → Maven artifact: quarkus-eddi-deployment
+    └── io.quarkiverse.eddi.deployment/
+        ├── EddiProcessor.java                   → Feature registration
+        ├── EddiDevServicesBuildTimeConfig.java   → Build-time Dev Services config
+        ├── EddiDevServicesProcessor.java         → Docker container management
+        ├── EddiAgentAnnotationProcessor.java     → @EddiAgent build-time scan
+        └── EddiMcpBridgeProcessor.java           → @EddiTool build-time scan
 ```
 
 ---
@@ -69,7 +75,7 @@ mvn verify                       # Full verification including integration tests
 
 ### REST Client Interfaces
 
-The 4 REST client interfaces under `client/` map to EDDI's actual JAX-RS interfaces:
+The 8 REST client interfaces under `client/` map to EDDI's actual JAX-RS interfaces:
 
 | SDK Interface | EDDI Interface | Base Path |
 |---|---|---|
@@ -77,8 +83,14 @@ The 4 REST client interfaces under `client/` map to EDDI's actual JAX-RS interfa
 | `EddiSetupRestClient` | `IRestAgentSetup` | `/administration/agents` |
 | `EddiGroupRestClient` | `IRestGroupConversation` | `/groups` |
 | `EddiAdminRestClient` | `IRestAgentAdministration` | `/administration` |
+| `EddiStreamingRestClient` | `IRestAgentEngine` (SSE) | `/agents` |
+| `EddiManagedRestClient` | `IRestManagedConversation` | `/managed` |
+| `EddiLogRestClient` | `IRestLogAdministration` | `/administration/logs` |
+| `EddiCoordinatorRestClient` | `IRestCoordinatorAdministration` | `/administration/coordinator` |
 
-When EDDI's API changes, update these interfaces and the CI sync check will catch mismatches.
+Additionally, `EddiApiKeyFilter` is a `@Provider` that auto-injects `quarkus.eddi.api-key` as a Bearer token on all client requests.
+
+When EDDI's API changes, update these interfaces accordingly.
 
 ### Conventions
 
@@ -86,7 +98,7 @@ When EDDI's API changes, update these interfaces and the CI sync check will catc
 - **Group ID**: `io.quarkiverse.eddi`
 - **Config prefix**: `quarkus.eddi.*`
 - **Feature name**: `eddi` (registered in `EddiProcessor`)
-- **REST client config key**: `eddi` (all 4 interfaces share this key)
+- **REST client config key**: `eddi` (all 8 interfaces share this key)
 - **Java version**: 21 (extension consumer minimum)
 
 ### Commit Conventions
@@ -117,6 +129,11 @@ docs: update configuration reference
 | `deployment/pom.xml` | Build-time dependencies (Testcontainers, core-deployment) |
 | `EddiConfig.java` | All `quarkus.eddi.*` configuration |
 | `EddiClient.java` | Main fluent API facade |
+| `EddiHealthCheck.java` | Async readiness health check |
 | `EddiDevServicesProcessor.java` | Docker container lifecycle |
+| `EddiDevServicesBuildTimeConfig.java` | Build-time config for Dev Services |
 | `EddiAgentAnnotationProcessor.java` | @EddiAgent endpoint generation |
 | `EddiMcpBridgeProcessor.java` | @EddiTool MCP registration |
+| `.github/workflows/build.yml` | CI — matrix build, format check |
+| `.github/workflows/release.yml` | Quarkiverse release pipeline |
+| `.github/project.yml` | Release version metadata |

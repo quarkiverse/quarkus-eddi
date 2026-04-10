@@ -10,3 +10,7 @@ target/
 .factorypath
 .vscode/
 test_output.txt
+
+# OS artifacts
+.DS_Store
+Thumbs.db

@@ -96,7 +96,7 @@ tokens.subscribe().with(token -> {
 
 // Callback-style
 conv.sayStreaming("Explain quantum physics", new StreamListener() {
-    @Override public void onToken(String text && System.out.print(text); }
+    @Override public void onToken(String text) { System.out.print(text); }
     @Override public void onComplete(ConversationResult result) { /* done */ }
     @Override public void onError(Throwable error) { log.error("Failed", error); }
 });
