@@ -1,22 +1,47 @@
-# Quarkus EDDI Extension
+<p align="center">
+  <a href="https://eddi.labs.ai">
+    <img src="https://raw.githubusercontent.com/labsai/EDDI/main/docs/eddi-logo.svg" alt="EDDI Logo" width="120" />
+  </a>
+</p>
 
-[![Build](https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml/badge.svg)](https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/io.quarkiverse.eddi/quarkus-eddi)](https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi)
+<h1 align="center">Quarkus EDDI Extension</h1>
 
-A [Quarkiverse](https://github.com/quarkiverse) extension for integrating the [EDDI](https://github.com/labsai/EDDI) conversational AI platform into Quarkus applications. Built exclusively for **EDDI v6**.
+<p align="center">
+  The official Quarkus SDK for <a href="https://github.com/labsai/EDDI">EDDI</a> — the enterprise AI orchestration platform.<br/>
+  Reactive-first · Typesafe · Zero-config Dev Services
+</p>
+
+<p align="center">
+  <a href="https://eddi.labs.ai"><img src="https://img.shields.io/badge/🌐_Website-eddi.labs.ai-0f172a?style=for-the-badge" alt="Website" /></a>&nbsp;
+  <a href="https://github.com/labsai/EDDI"><img src="https://img.shields.io/badge/⚙️_EDDI_Server-GitHub-181717?style=for-the-badge&logo=github" alt="EDDI Server" /></a>&nbsp;
+  <a href="https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/quarkiverse/quarkus-eddi/build.yml?style=for-the-badge&label=CI&labelColor=27272a" alt="Build" /></a>&nbsp;
+  <a href="https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi"><img src="https://img.shields.io/maven-central/v/io.quarkiverse.eddi/quarkus-eddi?style=for-the-badge&color=f59e0b&labelColor=27272a&label=Maven%20Central" alt="Maven Central" /></a>
+</p>
+
+---
+
+## 🤔 What is this?
+
+**quarkus-eddi** is a [Quarkiverse](https://github.com/quarkiverse) extension that provides a Quarkus-native SDK for the [EDDI](https://github.com/labsai/EDDI) conversational AI platform. Instead of manually wiring REST clients, managing conversation lifecycles, and configuring SSE streams — you add one dependency and get all of it out of the box.
+
+> 🧩 This extension is built exclusively for **EDDI v6** and follows Quarkiverse standards for seamless integration into the Quarkus ecosystem.
+
+---
 
 ## ✨ Features
 
-| Feature | Description |
-|---|---|
-| 🚀 **Dev Services** | Auto-starts EDDI + MongoDB during `quarkus dev` — zero config |
-| 💬 **Fluent Client** | `@Inject EddiClient eddi;` → `eddi.chat("agent", "Hello!")` |
-| ⚡ **SSE Streaming** | `Multi<StreamToken>` with full event types (`token`, `task_start`, `done`, `error`) |
-| 🤖 **Managed Agents** | Intent-based conversations — no conversation ID management needed |
-| 🔗 **@EddiAgent** | Declaratively wire agents to REST/SSE endpoints at build time |
-| 🛠️ **@EddiTool** | Expose CDI methods as MCP tools EDDI can call back |
-| 🔐 **API Key Auth** | Auto-propagated Bearer token via `quarkus.eddi.api-key` |
-| 💚 **Health Check** | Async readiness probe for EDDI connectivity |
+| | Feature | What You Get |
+|---|---|---|
+| 🚀 | **Dev Services** | Auto-starts EDDI + MongoDB via Testcontainers in `quarkus dev` — zero config |
+| 💬 | **Fluent Client API** | `@Inject EddiClient eddi;` → `eddi.chat("agent", "Hello!")` — one-liner conversations |
+| ⚡ | **SSE Streaming** | `Multi<StreamToken>` with full event types (`token`, `task_start`, `done`, `error`) |
+| 🤖 | **Managed Agents** | Intent-based conversations — no conversation ID management needed |
+| 🔗 | **@EddiAgent** | Declarative annotation → auto-generated REST/SSE endpoints at build time |
+| 🛠️ | **@EddiTool MCP Bridge** | Expose CDI methods as MCP tools EDDI can call back — transparently bridges to `quarkus-mcp-server-http` |
+| 🔐 | **API Key Auth** | Auto-propagated Bearer token via `quarkus.eddi.api-key` |
+| 💚 | **Health Check** | Async readiness probe for EDDI connectivity |
+
+---
 
 ## 📦 Installation
 
@@ -30,13 +55,15 @@ Add the dependency to your `pom.xml`:
 </dependency>
 ```
 
-> **Tip:** Check [Maven Central](https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi) for the latest release version.
+> 💡 Check [Maven Central](https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi) for the latest release version.
 
-That's it. In dev mode, EDDI starts automatically via Dev Services.
+That's it. In dev mode, EDDI starts automatically via Dev Services. 🎉
 
-## 🚀 Quick Start
+---
 
-### One-liner — ask a question, get an answer
+## ⚡ Quick Start
+
+### 🗣️ One-liner — ask a question, get an answer
 
 ```java
 @Inject EddiClient eddi;
@@ -46,7 +73,7 @@ public void handleRequest() {
 }
 ```
 
-### Full conversation lifecycle
+### 🔄 Full conversation lifecycle
 
 ```java
 @Inject EddiClient eddi;
@@ -74,7 +101,7 @@ public void conversation() {
 }
 ```
 
-### Reactive API
+### 🔀 Reactive API
 
 Every method has an `*Async()` variant returning `Uni<T>`:
 
@@ -85,7 +112,7 @@ eddi.agent("my-agent")
     .subscribe().with(result -> log.info(result.text()));
 ```
 
-### SSE Streaming
+### 📡 SSE Streaming
 
 ```java
 // Reactive (Mutiny Multi) — event names are preserved from the server
@@ -104,7 +131,7 @@ conv.sayStreaming("Explain quantum physics", new StreamListener() {
 });
 ```
 
-### Managed Agents (Intent-based)
+### 🤖 Managed Agents (Intent-based)
 
 No conversation ID management — EDDI resolves the active conversation by intent + userId:
 
@@ -114,7 +141,7 @@ ConversationResult result = mc.say("I need help with my order");
 mc.end();
 ```
 
-### Fluent Agent Setup
+### 🧪 Fluent Agent Setup
 
 ```java
 // Standard agent
@@ -136,7 +163,7 @@ SetupResult apiResult = eddi.setupApi()
     .create();
 ```
 
-### Group Discussions (Multi-Agent Debates)
+### 👥 Group Discussions (Multi-Agent Debates)
 
 ```java
 Response result = eddi.group("architect-panel")
@@ -144,7 +171,9 @@ Response result = eddi.group("architect-panel")
     .discuss("Monolith vs microservices?");
 ```
 
-### @EddiAgent — Declarative Endpoint Wiring
+---
+
+## 🔗 @EddiAgent — Declarative Endpoint Wiring
 
 Annotate a class to auto-generate REST + SSE endpoints that proxy to an EDDI agent:
 
@@ -168,7 +197,9 @@ public class SupportEndpoint {
 //            Query param: ?userId=anonymous  → per-user conversation reuse
 ```
 
-### @EddiTool — MCP Tool Bridge
+---
+
+## 🛠️ @EddiTool — MCP Tool Bridge
 
 Expose your business logic as MCP tools that EDDI agents can invoke:
 
@@ -186,28 +217,32 @@ public class OrderTools {
 // → Auto-registered as MCP tool, EDDI discovers and calls it during conversations
 ```
 
+---
+
 ## ⚙️ Configuration
 
 All properties are under the `quarkus.eddi` namespace:
 
 ```properties
-# EDDI server URL (auto-configured by Dev Services in dev mode)
+# 🌐 EDDI server URL (auto-configured by Dev Services in dev mode)
 quarkus.eddi.url=http://localhost:7070
 
-# API key for authentication
+# 🔐 API key for authentication
 quarkus.eddi.api-key=your-api-key
 
-# Default deployment environment
+# 🌍 Default deployment environment
 quarkus.eddi.environment=production
 
-# Dev Services
+# 🚀 Dev Services
 quarkus.eddi.devservices.enabled=true           # default: true in dev/test
 quarkus.eddi.devservices.image=labsai/eddi:6
 quarkus.eddi.devservices.mongodb-image=mongo:6.0
 
-# Health check
+# 💚 Health check
 quarkus.eddi.health.enabled=true
 ```
+
+---
 
 ## 🏛️ Architecture
 
@@ -231,15 +266,53 @@ quarkus.eddi.health.enabled=true
     └─────────────────────────────────────────────────┘
 ```
 
-## 🔗 Related Projects
+---
 
-| Project | Description |
+## 🧪 Testing
+
+The extension ships with a comprehensive test suite:
+
+| | Suite | What It Covers |
+|---|---|---|
+| ✅ | **Unit Tests** | Model records, API key filter, conversation lifecycle, client facade |
+| 🔌 | **WireMock Tests** | Agent endpoint generation, extension bootstrap |
+| 🐳 | **Integration Tests** | Real EDDI server via Testcontainers (`EddiRealServerIT`) |
+| 🔄 | **CI Matrix** | JDK 21 × {Ubuntu, Windows} |
+
+---
+
+## 📦 The EDDI Ecosystem
+
+| | Repo | Description |
+|---|---|---|
+| 🧠 | [**EDDI**](https://github.com/labsai/EDDI) | Core AI orchestration engine |
+| 🖥️ | [**EDDI-Manager**](https://github.com/labsai/EDDI-Manager) | Visual management UI (React 19) |
+| 💬 | [**eddi-chat-ui**](https://github.com/labsai/eddi-chat-ui) | Embeddable chat widget |
+| ☸️ | [**EDDI-Operator**](https://github.com/labsai/EDDI-operator) | Kubernetes operator |
+| 📦 | [**quarkus-eddi**](https://github.com/quarkiverse/quarkus-eddi) | This repo — Quarkus SDK |
+| 🌐 | [**EDDI Website**](https://github.com/labsai/EDDI-LABS-AI-Website) | Marketing site at [eddi.labs.ai](https://eddi.labs.ai) |
+
+---
+
+## 🔗 Quick Links
+
+| | Link |
 |---|---|
-| [EDDI](https://github.com/labsai/EDDI) | The EDDI backend server |
-| [EDDI-Manager](https://github.com/labsai/EDDI-Manager) | Admin dashboard UI |
-| [eddi-chat-ui](https://github.com/labsai/eddi-chat-ui) | Standalone chat widget |
-| [eddi-website](https://github.com/labsai/eddi-website) | Documentation site |
+| 🌐 | **Website:** [eddi.labs.ai](https://eddi.labs.ai) |
+| ⚙️ | **EDDI Server:** [github.com/labsai/EDDI](https://github.com/labsai/EDDI) |
+| 📖 | **Documentation:** [docs.labs.ai](https://docs.labs.ai) |
+| 🐳 | **Docker Hub:** [hub.docker.com/r/labsai/eddi](https://hub.docker.com/r/labsai/eddi) |
+| 💬 | **Discussions:** [GitHub Discussions](https://github.com/labsai/EDDI/discussions) |
+| 🐛 | **Report a Bug:** [GitHub Issues](https://github.com/quarkiverse/quarkus-eddi/issues) |
 
-## 📄 License
+---
+
+## 📜 License
 
 Apache License 2.0 — see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  Part of the <a href="https://eddi.labs.ai">EDDI</a> ecosystem. Developed with ❤️ in Europe.
+</p>
