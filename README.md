@@ -26,9 +26,11 @@ Add the dependency to your `pom.xml`:
 <dependency>
     <groupId>io.quarkiverse.eddi</groupId>
     <artifactId>quarkus-eddi</artifactId>
-    <version>6.0.0-SNAPSHOT</version>
+    <version>6.0.0</version>
 </dependency>
 ```
+
+> **Tip:** Check [Maven Central](https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi) for the latest release version.
 
 That's it. In dev mode, EDDI starts automatically via Dev Services.
 
