@@ -6,8 +6,13 @@ import io.smallrye.config.WithDefault;
 /**
  * Build-time configuration for EDDI Dev Services.
  * <p>
- * This is a separate config mapping from the runtime config because
- * Dev Services runs at build time and cannot access runtime config directly.
+ * <b>Note:</b> This interface is <i>not injected</i> into build steps. Quarkus does not
+ * support {@code @ConfigMapping} injection in deployment build steps. The actual
+ * config values are read via {@code ConfigProvider.getConfig()} in
+ * {@link EddiDevServicesProcessor}. This interface serves as the canonical
+ * documentation of the available properties and their defaults.
+ *
+ * @see EddiDevServicesProcessor
  */
 @ConfigMapping(prefix = "quarkus.eddi.devservices")
 public interface EddiDevServicesBuildTimeConfig {

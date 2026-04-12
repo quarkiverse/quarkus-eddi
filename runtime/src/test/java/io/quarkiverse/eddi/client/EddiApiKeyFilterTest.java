@@ -81,13 +81,18 @@ class EddiApiKeyFilterTest {
             }
 
             @Override
-            public DevServicesConfig devservices() {
-                return null;
-            }
-
-            @Override
             public McpBridgeConfig mcpBridge() {
-                return null;
+                return new McpBridgeConfig() {
+                    @Override
+                    public boolean enabled() {
+                        return true;
+                    }
+
+                    @Override
+                    public String agents() {
+                        return "*";
+                    }
+                };
             }
 
             @Override

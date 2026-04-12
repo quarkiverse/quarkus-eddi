@@ -1,7 +1,8 @@
 package io.quarkiverse.eddi;
 
+import static io.quarkiverse.eddi.EddiDefaults.DEFAULT_TIMEOUT;
+
 import java.net.URI;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -52,9 +53,6 @@ import io.smallrye.mutiny.Uni;
 @ApplicationScoped
 public class EddiClient {
 
-    /** Default timeout for blocking operations. */
-    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
-
     @Inject
     EddiConfig config;
 
@@ -94,28 +92,41 @@ public class EddiClient {
 
     /**
      * Send a message to an agent in a single call.
-     * Creates a new conversation, sends the message, and returns the response.
+     * Creates a new conversation, sends the message, returns the response,
+     * and automatically ends the conversation.
      */
     public String chat(String agentId, String message) {
         Conversation conv = agent(agentId).startConversation();
-        ConversationResult result = conv.say(message);
-        return result.text();
+        try {
+            ConversationResult result = conv.say(message);
+            return result.text();
+        } finally {
+            conv.endQuietly();
+        }
     }
 
     /**
      * Send a message and get the full result (including quick replies, actions, etc.).
+     * Creates a new conversation, sends the message, returns the result,
+     * and automatically ends the conversation.
      */
     public ConversationResult chatFull(String agentId, String message) {
         Conversation conv = agent(agentId).startConversation();
-        return conv.say(message);
+        try {
+            return conv.say(message);
+        } finally {
+            conv.endQuietly();
+        }
     }
 
     /**
-     * Reactive one-liner — starts a conversation and sends a message.
+     * Reactive one-liner — starts a conversation, sends a message,
+     * and automatically ends the conversation afterwards.
      */
     public Uni<ConversationResult> chatAsync(String agentId, String message) {
         return agent(agentId).startConversationAsync()
-                .flatMap(conv -> conv.sayAsync(message));
+                .flatMap(conv -> conv.sayAsync(message)
+                        .eventually(conv::endAsync));
     }
 
     // ─── Agent builder ────────────────────────────
@@ -345,7 +356,7 @@ public class EddiClient {
     }
 
     // ════════════════════════════════════════════════
-    //  Fluent setup builders (D2)
+    //  Fluent setup builders
     // ════════════════════════════════════════════════
 
     /**
@@ -622,10 +633,16 @@ public class EddiClient {
      */
     public class LogOps {
 
+        /**
+         * Get recent logs with default filters (INFO level, limit 100).
+         */
         public Uni<List<LogEntry>> recentAsync() {
             return recentAsync(null, null, "INFO", 100);
         }
 
+        /**
+         * Get recent logs with custom filters.
+         */
         public Uni<List<LogEntry>> recentAsync(String agentId, String conversationId, String level, int limit) {
             return logClient.getRecentLogs(agentId, conversationId, level, limit);
         }
@@ -634,8 +651,21 @@ public class EddiClient {
             return recentAsync().await().atMost(DEFAULT_TIMEOUT);
         }
 
+        /**
+         * Get historical logs for a specific agent.
+         */
         public Uni<List<Map<String, Object>>> historyAsync(String agentId) {
-            return logClient.getHistoryLogs(null, agentId, null, null, null, null, 0, 100);
+            return historyAsync(null, agentId, null, null, null, null, 0, 100);
+        }
+
+        /**
+         * Get historical logs with full filter control.
+         */
+        public Uni<List<Map<String, Object>>> historyAsync(String environment, String agentId,
+                Integer agentVersion, String conversationId, String userId,
+                String instanceId, int skip, int limit) {
+            return logClient.getHistoryLogs(environment, agentId, agentVersion, conversationId, userId,
+                    instanceId, skip, limit);
         }
 
         public Uni<Map<String, String>> instanceIdAsync() {
@@ -687,7 +717,16 @@ public class EddiClient {
         }
         URI uri = URI.create(uriString);
         String path = uri.getPath();
+        if (path == null || path.isBlank()) {
+            throw new IllegalStateException("EDDI Location header has no path: " + uriString);
+        }
         String[] segments = path.split("/");
-        return segments[segments.length - 1];
+        // Walk backwards to find the last non-empty segment
+        for (int i = segments.length - 1; i >= 0; i--) {
+            if (!segments[i].isEmpty()) {
+                return segments[i];
+            }
+        }
+        throw new IllegalStateException("EDDI Location header has no path segments: " + uriString);
     }
 }

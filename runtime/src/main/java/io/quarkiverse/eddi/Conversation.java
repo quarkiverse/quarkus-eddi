@@ -1,6 +1,7 @@
 package io.quarkiverse.eddi;
 
-import java.time.Duration;
+import static io.quarkiverse.eddi.EddiDefaults.DEFAULT_TIMEOUT;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -13,6 +14,7 @@ import io.quarkiverse.eddi.client.EddiStreamingRestClient;
 import io.quarkiverse.eddi.model.*;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.subscription.Cancellable;
 
 /**
  * Represents an active conversation with an EDDI agent.
@@ -42,15 +44,16 @@ import io.smallrye.mutiny.Uni;
  */
 public class Conversation {
 
-    /** Default timeout for blocking operations (30 seconds). */
-    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
-
     private final String conversationId;
     private final String agentId;
     private final EddiAgentRestClient agentClient;
     private final EddiStreamingRestClient streamingClient;
 
-    public Conversation(String conversationId, String agentId,
+    /**
+     * Package-private constructor — conversations should be created via
+     * {@link EddiClient.AgentBuilder#startConversation()}.
+     */
+    Conversation(String conversationId, String agentId,
             EddiAgentRestClient agentClient, EddiStreamingRestClient streamingClient) {
         this.conversationId = conversationId;
         this.agentId = agentId;
@@ -142,15 +145,27 @@ public class Conversation {
 
     /**
      * Send a message with a streaming callback listener.
+     * <p>
+     * Returns a {@link Cancellable} that can be used to cancel the streaming
+     * subscription.
+     *
+     * @param message the message to send
+     * @param listener callback listener for streaming events
+     * @return a cancellable subscription handle
      */
-    public void sayStreaming(String message, StreamListener listener) {
-        sayStreaming(message)
+    public Cancellable sayStreaming(String message, StreamListener listener) {
+        return sayStreaming(message)
                 .subscribe().with(
                         token -> {
                             if (token.isToken()) {
                                 listener.onToken(token.text());
+                            } else if (token.isTaskStart()) {
+                                listener.onTaskStart(token.text(), token.type(), 0);
+                            } else if (token.isTaskComplete()) {
+                                listener.onTaskComplete(token.text(), token.type(), 0);
                             } else if (token.isDone()) {
-                                listener.onComplete(null);
+                                // Parse the done event data into a ConversationResult
+                                listener.onComplete(parseDoneEvent(token.text()));
                             } else if (token.isError()) {
                                 listener.onError(new RuntimeException(token.text()));
                             }
@@ -267,6 +282,18 @@ public class Conversation {
         endAsync().await().atMost(DEFAULT_TIMEOUT);
     }
 
+    /**
+     * End this conversation, swallowing any errors.
+     * Used for cleanup in try/finally blocks.
+     */
+    void endQuietly() {
+        try {
+            end();
+        } catch (Exception ignored) {
+            // Best-effort cleanup
+        }
+    }
+
     // ─── Snapshot parsing ─────────────────────────
 
     @SuppressWarnings("unchecked")
@@ -314,11 +341,27 @@ public class Conversation {
                 state);
     }
 
-    private static ConversationState parseState(String stateStr) {
+    static ConversationState parseState(String stateStr) {
         try {
             return ConversationState.valueOf(stateStr);
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    /**
+     * Parse the "done" SSE event into a simple ConversationResult.
+     * <p>
+     * The done event data is either JSON or plain text. We return it as
+     * the agent response text — callers who need the full snapshot should use
+     * {@link #readAsync()} after streaming completes.
+     */
+    private ConversationResult parseDoneEvent(String data) {
+        if (data == null || data.isBlank()) {
+            return new ConversationResult(conversationId, "", List.of(), List.of(), List.of(), null);
+        }
+        // Return the raw done event data as the response text
+        return new ConversationResult(conversationId, data, List.of(data), List.of(), List.of(),
+                ConversationState.READY);
     }
 }

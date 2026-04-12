@@ -1,0 +1,18 @@
+name: "EDDI"
+description: "Quarkus extension for the EDDI conversational AI platform — fluent client, SSE streaming, Dev Services, annotation-driven agents"
+metadata:
+  short-name: "eddi"
+  keywords:
+    - "eddi"
+    - "conversational-ai"
+    - "chatbot"
+    - "llm"
+    - "agent"
+    - "mcp"
+    - "streaming"
+    - "sse"
+  categories:
+    - "integration"
+    - "web"
+  status: "preview"
+  guide: "https://github.com/quarkiverse/quarkus-eddi"

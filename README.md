@@ -1,7 +1,7 @@
 # Quarkus EDDI Extension
 
 [![Build](https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml/badge.svg)](https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml)
-<!-- [![Maven Central](https://img.shields.io/maven-central/v/io.quarkiverse.eddi/quarkus-eddi)](https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi) -->
+[![Maven Central](https://img.shields.io/maven-central/v/io.quarkiverse.eddi/quarkus-eddi)](https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi)
 
 A [Quarkiverse](https://github.com/quarkiverse) extension for integrating the [EDDI](https://github.com/labsai/EDDI) conversational AI platform into Quarkus applications. Built exclusively for **EDDI v6**.
 
@@ -26,7 +26,7 @@ Add the dependency to your `pom.xml`:
 <dependency>
     <groupId>io.quarkiverse.eddi</groupId>
     <artifactId>quarkus-eddi</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>6.0.0-SNAPSHOT</version>
 </dependency>
 ```
 

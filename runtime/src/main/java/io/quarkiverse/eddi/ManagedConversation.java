@@ -1,6 +1,6 @@
 package io.quarkiverse.eddi;
 
-import java.time.Duration;
+import static io.quarkiverse.eddi.EddiDefaults.DEFAULT_TIMEOUT;
 
 import jakarta.ws.rs.core.Response;
 
@@ -24,14 +24,15 @@ import io.smallrye.mutiny.Uni;
  */
 public class ManagedConversation {
 
-    /** Default timeout for blocking operations (30 seconds). */
-    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
-
     private final String intent;
     private final String userId;
     private final EddiManagedRestClient managedClient;
 
-    public ManagedConversation(String intent, String userId, EddiManagedRestClient managedClient) {
+    /**
+     * Package-private constructor — managed conversations should be created via
+     * {@link EddiClient.ManagedAgentBuilder#build()}.
+     */
+    ManagedConversation(String intent, String userId, EddiManagedRestClient managedClient) {
         this.intent = intent;
         this.userId = userId;
         this.managedClient = managedClient;

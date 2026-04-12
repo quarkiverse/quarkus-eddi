@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MongoDBContainer;
@@ -34,15 +35,22 @@ public class EddiDevServicesProcessor {
     private static final String MONGO_NETWORK_ALIAS = "mongodb";
 
     @BuildStep(onlyIfNot = IsNormal.class)
-    DevServicesResultBuildItem startDevServices(LaunchModeBuildItem launchMode,
-            EddiDevServicesBuildTimeConfig buildTimeConfig) {
+    DevServicesResultBuildItem startDevServices(LaunchModeBuildItem launchMode) {
 
         if (launchMode.getLaunchMode() == LaunchMode.NORMAL) {
             return null;
         }
 
-        // Respect the enabled flag
-        if (!buildTimeConfig.enabled()) {
+        // Read build-time config via ConfigProvider
+        var config = ConfigProvider.getConfig();
+        boolean enabled = config.getOptionalValue("quarkus.eddi.devservices.enabled", Boolean.class)
+                .orElse(true);
+        String eddiImage = config.getOptionalValue("quarkus.eddi.devservices.image", String.class)
+                .orElse("labsai/eddi:6");
+        String mongoImage = config.getOptionalValue("quarkus.eddi.devservices.mongodb-image", String.class)
+                .orElse("mongo:6.0");
+
+        if (!enabled) {
             LOG.debug("EDDI Dev Services disabled via config");
             return null;
         }
@@ -59,7 +67,7 @@ public class EddiDevServicesProcessor {
 
             // Start MongoDB
             mongodb = new MongoDBContainer(
-                    DockerImageName.parse(buildTimeConfig.mongodbImage()))
+                    DockerImageName.parse(mongoImage))
                     .withNetwork(network)
                     .withNetworkAliases(MONGO_NETWORK_ALIAS);
             mongodb.start();
@@ -71,7 +79,7 @@ public class EddiDevServicesProcessor {
 
             // Start EDDI v6
             eddi = new GenericContainer<>(
-                    DockerImageName.parse(buildTimeConfig.image()))
+                    DockerImageName.parse(eddiImage))
                     .withNetwork(network)
                     .withExposedPorts(EDDI_PORT)
                     .withEnv("MONGODB_CONNECTIONSTRING", mongoConnectionString)

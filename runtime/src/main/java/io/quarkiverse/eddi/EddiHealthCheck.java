@@ -1,17 +1,13 @@
 package io.quarkiverse.eddi;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.health.HealthCheckResponse;
 import org.eclipse.microprofile.health.Readiness;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
 
+import io.quarkiverse.eddi.client.EddiAgentRestClient;
 import io.quarkiverse.eddi.config.EddiConfig;
 import io.smallrye.health.api.AsyncHealthCheck;
 import io.smallrye.mutiny.Uni;
@@ -19,8 +15,9 @@ import io.smallrye.mutiny.Uni;
 /**
  * Readiness health check that verifies connectivity to the EDDI server.
  * <p>
- * Pings the EDDI server's health endpoint. Can be disabled via
- * {@code quarkus.eddi.health.enabled=false}.
+ * Uses the same REST client infrastructure and API key filter as all other
+ * EDDI SDK calls, ensuring the health probe reflects real connectivity.
+ * Can be disabled via {@code quarkus.eddi.health.enabled=false}.
  * <p>
  * Implements {@link AsyncHealthCheck} to avoid blocking the I/O thread
  * in reactive mode.
@@ -29,16 +26,12 @@ import io.smallrye.mutiny.Uni;
 @ApplicationScoped
 public class EddiHealthCheck implements AsyncHealthCheck {
 
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(5);
-
-    /** Reuse a single HttpClient instance instead of creating one per call. */
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(CONNECT_TIMEOUT)
-            .build();
-
     @Inject
     EddiConfig config;
+
+    @Inject
+    @RestClient
+    EddiAgentRestClient agentClient;
 
     @Override
     public Uni<HealthCheckResponse> call() {
@@ -48,30 +41,28 @@ public class EddiHealthCheck implements AsyncHealthCheck {
 
         String baseUrl = config.url();
 
-        return Uni.createFrom().completionStage(() -> {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/q/health/ready"))
-                    .timeout(REQUEST_TIMEOUT)
-                    .GET()
-                    .build();
-
-            return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
-        }).map(response -> {
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                return HealthCheckResponse.named("EDDI")
+        // Use a lightweight REST client call to verify connectivity.
+        // getConversationState with a dummy ID will return 404 (not found)
+        // but proves the server is reachable and the REST client is configured.
+        return agentClient.getConversationState("health-check-probe")
+                .map(state -> HealthCheckResponse.named("EDDI")
                         .up()
                         .withData("url", baseUrl)
-                        .build();
-            } else {
-                return HealthCheckResponse.named("EDDI")
+                        .build())
+                .onFailure(e -> {
+                    // 404 is expected and means the server is healthy
+                    String msg = e.getMessage();
+                    return msg != null && (msg.contains("404") || msg.contains("Not Found"));
+                })
+                .recoverWithItem(HealthCheckResponse.named("EDDI")
+                        .up()
+                        .withData("url", baseUrl)
+                        .build())
+                .onFailure()
+                .recoverWithItem(e -> HealthCheckResponse.named("EDDI")
                         .down()
                         .withData("url", baseUrl)
-                        .withData("status", response.statusCode())
-                        .build();
-            }
-        }).onFailure().recoverWithItem(e -> HealthCheckResponse.named("EDDI")
-                .down()
-                .withData("error", e.getMessage())
-                .build());
+                        .withData("error", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName())
+                        .build());
     }
 }

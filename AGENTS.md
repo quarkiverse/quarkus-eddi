@@ -15,13 +15,12 @@
 | **[EDDI-Manager](https://github.com/labsai/EDDI-Manager)** | React 19, Vite | Admin dashboard |
 | **[eddi-chat-ui](https://github.com/labsai/eddi-chat-ui)** | React, TypeScript | Chat widget |
 
-### Architecture — The Five Pillars
+### Architecture — The Four Pillars
 
 1. **Dev Services** — Auto-start EDDI + MongoDB via Testcontainers in dev/test mode
 2. **Typesafe Client** — Hand-crafted REST client interfaces with Mutiny `Uni<T>` / `Multi<T>` return types
-3. **Dev UI** — Chat with agents, browse conversations in Quarkus Dev UI
-4. **@EddiAgent** — Build-time annotation scanning generates JAX-RS endpoints that proxy to EDDI agents
-5. **@EddiTool (MCP Bridge)** — Expose CDI methods as MCP tools that EDDI can discover and invoke
+3. **@EddiAgent** — Build-time annotation scanning generates JAX-RS endpoints that proxy to EDDI agents
+4. **@EddiTool (MCP Bridge)** — Expose CDI methods as MCP tools via annotation transformation to `quarkus-mcp-server-http`
 
 ### Key Design Decisions
 
@@ -43,22 +42,24 @@ quarkus-eddi/
 ├── runtime/                    → Maven artifact: quarkus-eddi
 │   └── io.quarkiverse.eddi/
 │       ├── EddiClient.java       → Main CDI facade (@ApplicationScoped)
-│       ├── Conversation.java     → Conversation lifecycle wrapper
+│       ├── Conversation.java     → Conversation lifecycle wrapper (pkg-private constructor)
 │       ├── ManagedConversation.java → Intent-based conversation (no ID mgmt)
-│       ├── EddiHealthCheck.java  → Async readiness probe
+│       ├── EddiDefaults.java     → Shared constants (DEFAULT_TIMEOUT, MAX_CONVERSATIONS)
+│       ├── EddiHealthCheck.java  → Async readiness probe (uses REST client)
 │       ├── StreamListener.java   → SSE callback interface
 │       ├── annotations/          → @EddiAgent, @OnMessage, @OnResponse, @EddiTool, @ToolArg
 │       ├── client/               → 8 @RegisterRestClient interfaces + API key filter
 │       ├── config/               → EddiConfig (@ConfigMapping quarkus.eddi.*)
-│       └── model/                → ConversationResult, StreamToken, InputData, etc.
+│       ├── model/                → ConversationResult, StreamToken, InputData, etc.
+│       └── resources/META-INF/quarkus-extension.yaml → Extension catalog metadata
 │
 └── deployment/                 → Maven artifact: quarkus-eddi-deployment
     └── io.quarkiverse.eddi.deployment/
         ├── EddiProcessor.java                   → Feature registration
-        ├── EddiDevServicesBuildTimeConfig.java   → Build-time Dev Services config
+        ├── EddiDevServicesBuildTimeConfig.java   → Build-time Dev Services config (canonical)
         ├── EddiDevServicesProcessor.java         → Docker container management
-        ├── EddiAgentAnnotationProcessor.java     → @EddiAgent build-time scan
-        └── EddiMcpBridgeProcessor.java           → @EddiTool build-time scan
+        ├── EddiAgentAnnotationProcessor.java     → @EddiAgent build-time scan (bounded map, @PreDestroy)
+        └── EddiMcpBridgeProcessor.java           → @EddiTool → @Tool annotation transformer
 ```
 
 ---
@@ -126,14 +127,16 @@ docs: update configuration reference
 | File | Purpose |
 |---|---|
 | `runtime/pom.xml` | Runtime dependencies (REST client, SSE, MCP) |
-| `deployment/pom.xml` | Build-time dependencies (Testcontainers, core-deployment) |
-| `EddiConfig.java` | All `quarkus.eddi.*` configuration |
-| `EddiClient.java` | Main fluent API facade |
-| `EddiHealthCheck.java` | Async readiness health check |
+| `deployment/pom.xml` | Build-time dependencies (Testcontainers, MCP deployment, core-deployment) |
+| `EddiConfig.java` | All `quarkus.eddi.*` runtime configuration |
+| `EddiClient.java` | Main fluent API facade (chat auto-ends conversations) |
+| `EddiDefaults.java` | Shared constants (DEFAULT_TIMEOUT, MAX_CONVERSATIONS_PER_AGENT) |
+| `EddiHealthCheck.java` | Async readiness probe using REST client |
 | `EddiDevServicesProcessor.java` | Docker container lifecycle |
-| `EddiDevServicesBuildTimeConfig.java` | Build-time config for Dev Services |
-| `EddiAgentAnnotationProcessor.java` | @EddiAgent endpoint generation |
-| `EddiMcpBridgeProcessor.java` | @EddiTool MCP registration |
-| `.github/workflows/build.yml` | CI — matrix build, format check |
+| `EddiDevServicesBuildTimeConfig.java` | Build-time config for Dev Services (canonical source) |
+| `EddiAgentAnnotationProcessor.java` | @EddiAgent endpoint generation (bounded map, @PreDestroy) |
+| `EddiMcpBridgeProcessor.java` | @EddiTool → @Tool annotation transformation bridge |
+| `CHANGELOG.md` | Release notes |
+| `.github/workflows/build.yml` | CI — matrix build (JDK 21, Ubuntu + Windows) |
 | `.github/workflows/release.yml` | Quarkiverse release pipeline |
 | `.github/project.yml` | Release version metadata |

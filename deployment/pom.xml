@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.quarkiverse.eddi</groupId>
         <artifactId>quarkus-eddi-parent</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>6.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>quarkus-eddi-deployment</artifactId>
@@ -64,10 +64,35 @@
             <artifactId>quarkus-smallrye-health-deployment</artifactId>
         </dependency>
 
+        <!--
+            NOTE: quarkus-mcp-server-http-deployment is NOT a compile/test dependency.
+            The @EddiTool MCP bridge works via AnnotationsTransformer which adds
+            @Tool/@ToolArg annotations by DotName — it does NOT require the MCP
+            deployment artifact on the classpath. When users add quarkus-mcp-server-http
+            to their project, the MCP server extension picks up the transformed
+            annotations automatically.
+        -->
+
         <!-- Test dependencies -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit5-internal</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock</artifactId>
+            <version>3.9.2</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
