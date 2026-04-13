@@ -40,4 +40,21 @@ public interface EddiDevServicesBuildTimeConfig {
      */
     @WithDefault("false")
     boolean seedDemoAgent();
+
+    /**
+     * Whether the EDDI Dev Service containers are shared across Quarkus apps.
+     * <p>
+     * When shared, containers are reused across live reloads and multiple
+     * dev-mode applications using the same {@code serviceName}.
+     */
+    @WithDefault("true")
+    boolean shared();
+
+    /**
+     * Service name used to identify shared EDDI Dev Service containers.
+     * <p>
+     * Only applies when {@code shared=true}.
+     */
+    @WithDefault("eddi")
+    String serviceName();
 }

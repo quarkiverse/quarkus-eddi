@@ -36,11 +36,17 @@ public record SetupAgentRequest(
         Boolean deploy,
         String environment) {
 
-    public static Builder builder() {
-        return new Builder();
+    public static Builder<? extends Builder<?>> builder() {
+        return new Builder<>();
     }
 
-    public static class Builder {
+    /**
+     * Fluent builder with self-referential generics for clean subclass chaining.
+     *
+     * @param <T> the concrete builder type (enables subclass setters to return the right type)
+     */
+    @SuppressWarnings("unchecked")
+    public static class Builder<T extends Builder<T>> {
         private String name;
         private String systemPrompt;
         private String provider;
@@ -56,74 +62,78 @@ public record SetupAgentRequest(
         private Boolean deploy;
         private String environment;
 
-        public Builder name(String name) {
+        protected T self() {
+            return (T) this;
+        }
+
+        public T name(String name) {
             this.name = name;
-            return this;
+            return self();
         }
 
-        public Builder systemPrompt(String systemPrompt) {
+        public T systemPrompt(String systemPrompt) {
             this.systemPrompt = systemPrompt;
-            return this;
+            return self();
         }
 
-        public Builder provider(String provider) {
+        public T provider(String provider) {
             this.provider = provider;
-            return this;
+            return self();
         }
 
-        public Builder model(String model) {
+        public T model(String model) {
             this.model = model;
-            return this;
+            return self();
         }
 
-        public Builder apiKey(String apiKey) {
+        public T apiKey(String apiKey) {
             this.apiKey = apiKey;
-            return this;
+            return self();
         }
 
-        public Builder baseUrl(String baseUrl) {
+        public T baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
-            return this;
+            return self();
         }
 
-        public Builder introMessage(String introMessage) {
+        public T introMessage(String introMessage) {
             this.introMessage = introMessage;
-            return this;
+            return self();
         }
 
-        public Builder enableBuiltInTools(Boolean enableBuiltInTools) {
+        public T enableBuiltInTools(Boolean enableBuiltInTools) {
             this.enableBuiltInTools = enableBuiltInTools;
-            return this;
+            return self();
         }
 
-        public Builder builtInToolsWhitelist(String builtInToolsWhitelist) {
+        public T builtInToolsWhitelist(String builtInToolsWhitelist) {
             this.builtInToolsWhitelist = builtInToolsWhitelist;
-            return this;
+            return self();
         }
 
-        public Builder enableQuickReplies(Boolean enableQuickReplies) {
+        public T enableQuickReplies(Boolean enableQuickReplies) {
             this.enableQuickReplies = enableQuickReplies;
-            return this;
+            return self();
         }
 
-        public Builder enableSentimentAnalysis(Boolean enableSentimentAnalysis) {
+        public T enableSentimentAnalysis(Boolean enableSentimentAnalysis) {
             this.enableSentimentAnalysis = enableSentimentAnalysis;
-            return this;
+            return self();
         }
 
-        public Builder mcpServerUrls(String mcpServerUrls) {
+        public T mcpServerUrls(String mcpServerUrls) {
             this.mcpServerUrls = mcpServerUrls;
-            return this;
+            return self();
         }
 
-        public Builder deploy(Boolean deploy) {
+        public T deploy(Boolean deploy) {
             this.deploy = deploy;
-            return this;
+            return self();
         }
 
-        public Builder environment(String environment) {
+        public T environment(String environment) {
             this.environment = environment;
-            return this;
+            return self();
         }
 
         public SetupAgentRequest build() {

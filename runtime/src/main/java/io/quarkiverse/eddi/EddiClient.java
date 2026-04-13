@@ -11,6 +11,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.jboss.logging.Logger;
 
 import io.quarkiverse.eddi.client.*;
 import io.quarkiverse.eddi.client.EddiGroupRestClient.DiscussRequest;
@@ -55,6 +56,8 @@ public class EddiClient {
 
     @Inject
     EddiConfig config;
+
+    private static final Logger LOG = Logger.getLogger(EddiClient.class);
 
     @Inject
     @RestClient
@@ -126,7 +129,9 @@ public class EddiClient {
     public Uni<ConversationResult> chatAsync(String agentId, String message) {
         return agent(agentId).startConversationAsync()
                 .flatMap(conv -> conv.sayAsync(message)
-                        .eventually(conv::endAsync));
+                        .eventually(() -> conv.endAsync()
+                                .onFailure().invoke(e -> LOG.debugf(e,
+                                        "Failed to end conversation %s (cleanup)", conv.id()))));
     }
 
     // ─── Agent builder ────────────────────────────
@@ -361,8 +366,16 @@ public class EddiClient {
 
     /**
      * Fluent builder for standard agent setup with terminal {@code create()} method.
+     * <p>
+     * All setter methods are inherited from {@link SetupAgentRequest.Builder}
+     * via self-referential generics — no override boilerplate needed.
      */
-    public class FluentSetupBuilder extends SetupAgentRequest.Builder {
+    public class FluentSetupBuilder extends SetupAgentRequest.Builder<FluentSetupBuilder> {
+
+        @Override
+        protected FluentSetupBuilder self() {
+            return this;
+        }
 
         /**
          * Execute the setup and return the result (reactive).
@@ -377,97 +390,20 @@ public class EddiClient {
         public SetupResult create() {
             return createAsync().await().atMost(DEFAULT_TIMEOUT);
         }
-
-        // Override all setters to return FluentSetupBuilder for chaining
-        @Override
-        public FluentSetupBuilder name(String name) {
-            super.name(name);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder systemPrompt(String s) {
-            super.systemPrompt(s);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder provider(String p) {
-            super.provider(p);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder model(String m) {
-            super.model(m);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder apiKey(String k) {
-            super.apiKey(k);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder baseUrl(String u) {
-            super.baseUrl(u);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder introMessage(String m) {
-            super.introMessage(m);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder enableBuiltInTools(Boolean b) {
-            super.enableBuiltInTools(b);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder builtInToolsWhitelist(String w) {
-            super.builtInToolsWhitelist(w);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder enableQuickReplies(Boolean b) {
-            super.enableQuickReplies(b);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder enableSentimentAnalysis(Boolean b) {
-            super.enableSentimentAnalysis(b);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder mcpServerUrls(String u) {
-            super.mcpServerUrls(u);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder deploy(Boolean d) {
-            super.deploy(d);
-            return this;
-        }
-
-        @Override
-        public FluentSetupBuilder environment(String e) {
-            super.environment(e);
-            return this;
-        }
     }
 
     /**
      * Fluent builder for API agent setup with terminal {@code create()} method.
+     * <p>
+     * All setter methods are inherited from {@link CreateApiAgentRequest.Builder}
+     * via self-referential generics — no override boilerplate needed.
      */
-    public class FluentApiSetupBuilder extends CreateApiAgentRequest.Builder {
+    public class FluentApiSetupBuilder extends CreateApiAgentRequest.Builder<FluentApiSetupBuilder> {
+
+        @Override
+        protected FluentApiSetupBuilder self() {
+            return this;
+        }
 
         /**
          * Execute the API agent setup and return the result (reactive).
@@ -481,85 +417,6 @@ public class EddiClient {
          */
         public SetupResult create() {
             return createAsync().await().atMost(DEFAULT_TIMEOUT);
-        }
-
-        // Override all setters to return FluentApiSetupBuilder for chaining
-        @Override
-        public FluentApiSetupBuilder name(String n) {
-            super.name(n);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder systemPrompt(String s) {
-            super.systemPrompt(s);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder openApiSpec(String s) {
-            super.openApiSpec(s);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder provider(String p) {
-            super.provider(p);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder model(String m) {
-            super.model(m);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder apiKey(String k) {
-            super.apiKey(k);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder apiBaseUrl(String u) {
-            super.apiBaseUrl(u);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder apiAuth(String a) {
-            super.apiAuth(a);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder endpoints(String e) {
-            super.endpoints(e);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder enableQuickReplies(Boolean b) {
-            super.enableQuickReplies(b);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder enableSentimentAnalysis(Boolean b) {
-            super.enableSentimentAnalysis(b);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder deploy(Boolean d) {
-            super.deploy(d);
-            return this;
-        }
-
-        @Override
-        public FluentApiSetupBuilder environment(String e) {
-            super.environment(e);
-            return this;
         }
     }
 

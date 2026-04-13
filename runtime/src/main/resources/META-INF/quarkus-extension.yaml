@@ -16,3 +16,5 @@ metadata:
     - "web"
   status: "preview"
   guide: "https://github.com/quarkiverse/quarkus-eddi"
+  config:
+    - "quarkus.eddi."

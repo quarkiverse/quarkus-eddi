@@ -23,11 +23,17 @@ public record CreateApiAgentRequest(
         Boolean deploy,
         String environment) {
 
-    public static Builder builder() {
-        return new Builder();
+    public static Builder<? extends Builder<?>> builder() {
+        return new Builder<>();
     }
 
-    public static class Builder {
+    /**
+     * Fluent builder with self-referential generics for clean subclass chaining.
+     *
+     * @param <T> the concrete builder type (enables subclass setters to return the right type)
+     */
+    @SuppressWarnings("unchecked")
+    public static class Builder<T extends Builder<T>> {
         private String name;
         private String systemPrompt;
         private String openApiSpec;
@@ -42,69 +48,73 @@ public record CreateApiAgentRequest(
         private Boolean deploy;
         private String environment;
 
-        public Builder name(String name) {
+        protected T self() {
+            return (T) this;
+        }
+
+        public T name(String name) {
             this.name = name;
-            return this;
+            return self();
         }
 
-        public Builder systemPrompt(String systemPrompt) {
+        public T systemPrompt(String systemPrompt) {
             this.systemPrompt = systemPrompt;
-            return this;
+            return self();
         }
 
-        public Builder openApiSpec(String openApiSpec) {
+        public T openApiSpec(String openApiSpec) {
             this.openApiSpec = openApiSpec;
-            return this;
+            return self();
         }
 
-        public Builder provider(String provider) {
+        public T provider(String provider) {
             this.provider = provider;
-            return this;
+            return self();
         }
 
-        public Builder model(String model) {
+        public T model(String model) {
             this.model = model;
-            return this;
+            return self();
         }
 
-        public Builder apiKey(String apiKey) {
+        public T apiKey(String apiKey) {
             this.apiKey = apiKey;
-            return this;
+            return self();
         }
 
-        public Builder apiBaseUrl(String apiBaseUrl) {
+        public T apiBaseUrl(String apiBaseUrl) {
             this.apiBaseUrl = apiBaseUrl;
-            return this;
+            return self();
         }
 
-        public Builder apiAuth(String apiAuth) {
+        public T apiAuth(String apiAuth) {
             this.apiAuth = apiAuth;
-            return this;
+            return self();
         }
 
-        public Builder endpoints(String endpoints) {
+        public T endpoints(String endpoints) {
             this.endpoints = endpoints;
-            return this;
+            return self();
         }
 
-        public Builder enableQuickReplies(Boolean enableQuickReplies) {
+        public T enableQuickReplies(Boolean enableQuickReplies) {
             this.enableQuickReplies = enableQuickReplies;
-            return this;
+            return self();
         }
 
-        public Builder enableSentimentAnalysis(Boolean enableSentimentAnalysis) {
+        public T enableSentimentAnalysis(Boolean enableSentimentAnalysis) {
             this.enableSentimentAnalysis = enableSentimentAnalysis;
-            return this;
+            return self();
         }
 
-        public Builder deploy(Boolean deploy) {
+        public T deploy(Boolean deploy) {
             this.deploy = deploy;
-            return this;
+            return self();
         }
 
-        public Builder environment(String environment) {
+        public T environment(String environment) {
             this.environment = environment;
-            return this;
+            return self();
         }
 
         public CreateApiAgentRequest build() {

@@ -1,11 +1,11 @@
 package io.quarkiverse.eddi.deployment;
 
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.jboss.jandex.*;
 import org.jboss.logging.Logger;
 
+import io.quarkiverse.eddi.BoundedConversationMap;
 import io.quarkiverse.eddi.Conversation;
 import io.quarkiverse.eddi.EddiClient;
 import io.quarkiverse.eddi.EddiDefaults;
@@ -28,12 +28,14 @@ import io.quarkus.gizmo.*;
  * For each class annotated with {@code @EddiAgent}, this processor generates
  * a JAX-RS resource that:
  * <ol>
- * <li>Manages a per-user conversation map (ConcurrentHashMap) to reuse conversations</li>
+ * <li>Manages a per-user conversation map using {@link BoundedConversationMap} with LRU eviction</li>
  * <li>Enforces a maximum map size ({@link EddiDefaults#MAX_CONVERSATIONS_PER_AGENT}) to prevent memory leaks</li>
  * <li>Invokes {@code @OnMessage} hooks before sending to EDDI (both say and stream)</li>
  * <li>Invokes {@code @OnResponse} hooks after receiving the response</li>
  * <li>Optionally exposes an SSE streaming endpoint when {@code streaming = true}</li>
- * <li>Cleans up all conversations on bean destruction via {@code @PreDestroy}</li>
+ * <li>Clears the local conversation cache on bean destruction via {@code @PreDestroy}.
+ * Note: EDDI conversations persist on the server across client restarts by design,
+ * so server-side cleanup is intentionally not performed.</li>
  * </ol>
  */
 public class EddiAgentAnnotationProcessor {
@@ -113,13 +115,13 @@ public class EddiAgentAnnotationProcessor {
             FieldCreator hookBeanField = creator.getFieldCreator("hookBean", annotatedClass.name().toString());
             hookBeanField.addAnnotation("jakarta.inject.Inject");
 
-            // Per-user conversation map
-            creator.getFieldCreator("conversations", ConcurrentHashMap.class);
+            // Per-user conversation map with LRU eviction
+            creator.getFieldCreator("conversations", BoundedConversationMap.class);
 
             // Generate init method to initialize the map
             generateInitMethod(creator);
 
-            // Generate cleanup method to end all conversations on shutdown
+            // Generate cleanup method to clear local cache on shutdown
             generateDestroyMethod(creator);
 
             // Generate POST method for say
@@ -140,31 +142,35 @@ public class EddiAgentAnnotationProcessor {
         try (MethodCreator method = creator.getMethodCreator("init", void.class)) {
             method.addAnnotation("jakarta.annotation.PostConstruct");
 
-            // this.conversations = new ConcurrentHashMap<>();
-            ResultHandle map = method.newInstance(MethodDescriptor.ofConstructor(ConcurrentHashMap.class));
+            // this.conversations = new BoundedConversationMap(MAX_CONVERSATIONS_PER_AGENT);
+            ResultHandle maxSize = method.load(EddiDefaults.MAX_CONVERSATIONS_PER_AGENT);
+            ResultHandle map = method.newInstance(
+                    MethodDescriptor.ofConstructor(BoundedConversationMap.class, int.class),
+                    maxSize);
             method.writeInstanceField(
-                    FieldDescriptor.of(creator.getClassName(), "conversations", ConcurrentHashMap.class),
+                    FieldDescriptor.of(creator.getClassName(), "conversations", BoundedConversationMap.class),
                     method.getThis(), map);
             method.returnVoid();
         }
     }
 
     /**
-     * Generate a @PreDestroy method that ends all active conversations and clears the map.
+     * Generate a @PreDestroy method that clears the local conversation cache.
+     * <p>
+     * Note: EDDI conversations persist on the server across client restarts
+     * by design, so we intentionally do NOT end server-side conversations here.
+     * This only releases the local in-memory references.
      */
     private void generateDestroyMethod(ClassCreator creator) {
         try (MethodCreator method = creator.getMethodCreator("destroy", void.class)) {
             method.addAnnotation("jakarta.annotation.PreDestroy");
 
             ResultHandle conversations = method.readInstanceField(
-                    FieldDescriptor.of(creator.getClassName(), "conversations", ConcurrentHashMap.class),
+                    FieldDescriptor.of(creator.getClassName(), "conversations", BoundedConversationMap.class),
                     method.getThis());
 
-            // conversations.values().forEach(conv -> { try { conv.endQuietly(); } catch (Exception ignored) {} });
-            // Since Gizmo iteration is complex, just call conversations.clear()
-            // The conversations will be GC'd, and the server-side cleanup is best-effort
             method.invokeVirtualMethod(
-                    MethodDescriptor.ofMethod(ConcurrentHashMap.class, "clear", void.class),
+                    MethodDescriptor.ofMethod(BoundedConversationMap.class, "clear", void.class),
                     conversations);
             method.returnVoid();
         }
@@ -196,7 +202,7 @@ public class EddiAgentAnnotationProcessor {
 
             message = invokeOnMessageHooks(method, hookBean, annotatedClass, onMessageMethods, message);
 
-            // --- Get or create conversation with bounded map ---
+            // --- Get or create conversation via BoundedConversationMap ---
             ResultHandle conv = getOrCreateConversation(method, creator, agentId, environment, userId);
 
             // conv.say(message)
@@ -251,7 +257,7 @@ public class EddiAgentAnnotationProcessor {
 
             message = invokeOnMessageHooks(method, hookBean, annotatedClass, onMessageMethods, message);
 
-            // --- Get or create conversation with bounded map ---
+            // --- Get or create conversation via BoundedConversationMap ---
             ResultHandle conv = getOrCreateConversation(method, creator, agentId, environment, userId);
 
             ResultHandle stream = method.invokeVirtualMethod(
@@ -288,39 +294,28 @@ public class EddiAgentAnnotationProcessor {
     }
 
     /**
-     * Generate bytecode to get or create a conversation from the bounded map.
-     * If the map exceeds MAX_CONVERSATIONS_PER_AGENT, clears it first.
+     * Generate bytecode to get or create a conversation from the {@link BoundedConversationMap}.
+     * Uses the map's built-in LRU eviction — no manual size checking needed.
      */
     private ResultHandle getOrCreateConversation(MethodCreator method, ClassCreator creator,
             String agentId, String environment, ResultHandle userId) {
 
         ResultHandle conversations = method.readInstanceField(
-                FieldDescriptor.of(creator.getClassName(), "conversations", ConcurrentHashMap.class),
+                FieldDescriptor.of(creator.getClassName(), "conversations", BoundedConversationMap.class),
                 method.getThis());
 
-        // Eviction guard: if map size exceeds limit, clear it
-        ResultHandle mapSize = method.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(ConcurrentHashMap.class, "size", int.class),
-                conversations);
-        BranchResult sizeCheck = method.ifIntegerGreaterThan(mapSize, method.load(EddiDefaults.MAX_CONVERSATIONS_PER_AGENT));
-        sizeCheck.trueBranch().invokeVirtualMethod(
-                MethodDescriptor.ofMethod(ConcurrentHashMap.class, "clear", void.class),
-                conversations);
-
-        // Use AssignableResultHandle so we can assign in both branches
-        AssignableResultHandle conv = method.createVariable(Conversation.class);
-
-        // Conversation existing = conversations.get(userId);
+        // Try to get existing conversation
         ResultHandle existing = method.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(ConcurrentHashMap.class, "get", Object.class, Object.class),
+                MethodDescriptor.ofMethod(BoundedConversationMap.class, "get", Conversation.class, String.class),
                 conversations, userId);
 
-        // if (existing == null) { create new } else { reuse }
+        AssignableResultHandle conv = method.createVariable(Conversation.class);
+
         BranchResult branch = method.ifNull(existing);
         BytecodeCreator trueBranch = branch.trueBranch();
         BytecodeCreator falseBranch = branch.falseBranch();
 
-        // True branch: create new conversation
+        // True branch: create new conversation and store in bounded map
         ResultHandle eddiClient = trueBranch.readInstanceField(
                 FieldDescriptor.of(creator.getClassName(), "eddiClient", EddiClient.class),
                 trueBranch.getThis());
@@ -336,9 +331,15 @@ public class EddiAgentAnnotationProcessor {
         ResultHandle newConv = trueBranch.invokeVirtualMethod(
                 MethodDescriptor.ofMethod(EddiClient.AgentBuilder.class, "startConversation", Conversation.class),
                 agentBuilder);
+
+        // Store in bounded map (LRU eviction happens automatically)
+        ResultHandle conversationsTrue = trueBranch.readInstanceField(
+                FieldDescriptor.of(creator.getClassName(), "conversations", BoundedConversationMap.class),
+                trueBranch.getThis());
         trueBranch.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(ConcurrentHashMap.class, "put", Object.class, Object.class, Object.class),
-                conversations, userId, newConv);
+                MethodDescriptor.ofMethod(BoundedConversationMap.class, "put", void.class, String.class,
+                        Conversation.class),
+                conversationsTrue, userId, newConv);
         trueBranch.assign(conv, newConv);
 
         // False branch: reuse existing conversation

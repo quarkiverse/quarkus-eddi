@@ -71,16 +71,6 @@ class EddiApiKeyFilterTest {
             }
 
             @Override
-            public int connectTimeoutMs() {
-                return 5000;
-            }
-
-            @Override
-            public int readTimeoutMs() {
-                return 30000;
-            }
-
-            @Override
             public McpBridgeConfig mcpBridge() {
                 return new McpBridgeConfig() {
                     @Override

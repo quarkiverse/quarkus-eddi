@@ -128,6 +128,49 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
                         .withBody("[]")));
+
+        // --- SSE Streaming ---
+        // POST /agents/conv-wiremock-001/stream with text/plain → SSE events
+        stubFor(post(urlPathEqualTo("/agents/conv-wiremock-001/stream"))
+                .withHeader("Content-Type", containing("text/plain"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "text/event-stream")
+                        .withBody("""
+                                event: task_start
+                                data: {"taskId":"1","taskType":"llm","index":0}
+
+                                event: token
+                                data: Hello
+
+                                event: token
+                                data:  from
+
+                                event: token
+                                data:  WireMock!
+
+                                event: task_complete
+                                data: {"taskId":"1","taskType":"llm","durationMs":42}
+
+                                event: done
+                                data: {"conversationId":"conv-wiremock-001","conversationState":"READY"}
+
+                                """)));
+
+        // --- Error scenarios ---
+        // Start conversation with non-existent agent → 404
+        stubFor(post(urlPathEqualTo("/agents/non-existent-agent/start"))
+                .willReturn(aResponse()
+                        .withStatus(404)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\":\"Agent not found\"}")));
+
+        // Simulate server error for a specific conversation
+        stubFor(post(urlPathEqualTo("/agents/error-conv/start"))
+                .willReturn(aResponse()
+                        .withStatus(500)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\":\"Internal server error\"}")));
     }
 
     @Override

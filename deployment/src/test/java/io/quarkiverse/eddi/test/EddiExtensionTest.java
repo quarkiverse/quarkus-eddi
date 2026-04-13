@@ -148,4 +148,37 @@ class EddiExtensionTest {
         // WireMock returns empty list
         assertTrue(logs.isEmpty());
     }
+
+    // ═══════════════════════════════════════════════
+    //  Error handling (negative paths)
+    // ═══════════════════════════════════════════════
+
+    @Test
+    @Order(40)
+    void startConversationWithNonExistentAgentThrows() {
+        assertThrows(Exception.class, () -> eddi.agent("non-existent-agent").startConversation(),
+                "Starting a conversation with a non-existent agent should throw");
+    }
+
+    @Test
+    @Order(41)
+    void startConversationServerErrorThrows() {
+        assertThrows(Exception.class, () -> eddi.agent("error-conv").startConversation(),
+                "Server 500 error should propagate as an exception");
+    }
+
+    @Test
+    @Order(42)
+    void chatWithNonExistentAgentThrows() {
+        assertThrows(Exception.class, () -> eddi.chat("non-existent-agent", "Hello"),
+                "chat() with a non-existent agent should throw");
+    }
+
+    @Test
+    @Order(43)
+    void chatAsyncWithNonExistentAgentFails() {
+        assertThrows(Exception.class,
+                () -> eddi.chatAsync("non-existent-agent", "Hello").await().indefinitely(),
+                "chatAsync() with a non-existent agent should fail");
+    }
 }

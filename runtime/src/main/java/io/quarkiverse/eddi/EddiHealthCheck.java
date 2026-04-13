@@ -7,7 +7,7 @@ import org.eclipse.microprofile.health.HealthCheckResponse;
 import org.eclipse.microprofile.health.Readiness;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
-import io.quarkiverse.eddi.client.EddiAgentRestClient;
+import io.quarkiverse.eddi.client.EddiCoordinatorRestClient;
 import io.quarkiverse.eddi.config.EddiConfig;
 import io.smallrye.health.api.AsyncHealthCheck;
 import io.smallrye.mutiny.Uni;
@@ -15,8 +15,12 @@ import io.smallrye.mutiny.Uni;
 /**
  * Readiness health check that verifies connectivity to the EDDI server.
  * <p>
- * Uses the same REST client infrastructure and API key filter as all other
- * EDDI SDK calls, ensuring the health probe reflects real connectivity.
+ * Uses the coordinator status API ({@code GET /administration/coordinator/status})
+ * to verify that the EDDI server is reachable and operational. This is a lightweight,
+ * purpose-built admin endpoint that returns the coordinator type, connection state,
+ * and queue statistics — avoiding the 404 log pollution of the previous dummy-probe approach.
+ * <p>
+ * Reports UP when the coordinator is connected, DOWN otherwise.
  * Can be disabled via {@code quarkus.eddi.health.enabled=false}.
  * <p>
  * Implements {@link AsyncHealthCheck} to avoid blocking the I/O thread
@@ -31,7 +35,7 @@ public class EddiHealthCheck implements AsyncHealthCheck {
 
     @Inject
     @RestClient
-    EddiAgentRestClient agentClient;
+    EddiCoordinatorRestClient coordinatorClient;
 
     @Override
     public Uni<HealthCheckResponse> call() {
@@ -41,23 +45,25 @@ public class EddiHealthCheck implements AsyncHealthCheck {
 
         String baseUrl = config.url();
 
-        // Use a lightweight REST client call to verify connectivity.
-        // getConversationState with a dummy ID will return 404 (not found)
-        // but proves the server is reachable and the REST client is configured.
-        return agentClient.getConversationState("health-check-probe")
-                .map(state -> HealthCheckResponse.named("EDDI")
-                        .up()
-                        .withData("url", baseUrl)
-                        .build())
-                .onFailure(e -> {
-                    // 404 is expected and means the server is healthy
-                    String msg = e.getMessage();
-                    return msg != null && (msg.contains("404") || msg.contains("Not Found"));
+        return coordinatorClient.getStatus()
+                .map(status -> {
+                    if (status != null && status.connected()) {
+                        return HealthCheckResponse.named("EDDI")
+                                .up()
+                                .withData("url", baseUrl)
+                                .withData("coordinator", status.coordinatorType())
+                                .withData("activeConversations", status.activeConversations())
+                                .build();
+                    } else {
+                        return HealthCheckResponse.named("EDDI")
+                                .down()
+                                .withData("url", baseUrl)
+                                .withData("reason", status != null
+                                        ? "coordinator disconnected: " + status.connectionStatus()
+                                        : "null status response")
+                                .build();
+                    }
                 })
-                .recoverWithItem(HealthCheckResponse.named("EDDI")
-                        .up()
-                        .withData("url", baseUrl)
-                        .build())
                 .onFailure()
                 .recoverWithItem(e -> HealthCheckResponse.named("EDDI")
                         .down()

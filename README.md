@@ -36,7 +36,7 @@
 | 💬 | **Fluent Client API** | `@Inject EddiClient eddi;` → `eddi.chat("agent", "Hello!")` — one-liner conversations |
 | ⚡ | **SSE Streaming** | `Multi<StreamToken>` with full event types (`token`, `task_start`, `done`, `error`) |
 | 🤖 | **Managed Agents** | Intent-based conversations — no conversation ID management needed |
-| 🔗 | **@EddiAgent** | Declarative annotation → auto-generated REST/SSE endpoints at build time |
+| 🔗 | **@EddiAgent** 🧪 | Declarative annotation → auto-generated REST/SSE endpoints at build time *(experimental)* |
 | 🛠️ | **@EddiTool MCP Bridge** | Expose CDI methods as MCP tools EDDI can call back — transparently bridges to `quarkus-mcp-server-http` |
 | 🔐 | **API Key Auth** | Auto-propagated Bearer token via `quarkus.eddi.api-key` |
 | 💚 | **Health Check** | Async readiness probe for EDDI connectivity |
@@ -173,7 +173,9 @@ Response result = eddi.group("architect-panel")
 
 ---
 
-## 🔗 @EddiAgent — Declarative Endpoint Wiring
+## 🔗 @EddiAgent — Declarative Endpoint Wiring 🧪
+
+> ⚠️ **Experimental:** This feature has a known limitation with RESTEasy Reactive. Generated endpoints may not be fully functional in all scenarios. Tracked for resolution post-6.0.0.
 
 Annotate a class to auto-generate REST + SSE endpoints that proxy to an EDDI agent:
 
