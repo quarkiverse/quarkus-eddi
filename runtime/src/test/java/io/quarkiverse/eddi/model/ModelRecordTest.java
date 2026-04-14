@@ -77,7 +77,7 @@ class ModelRecordTest {
 
     @Test
     void conversationStateValues() {
-        assertEquals(4, ConversationState.values().length);
+        assertEquals(5, ConversationState.values().length);
         assertNotNull(ConversationState.valueOf("READY"));
         assertNotNull(ConversationState.valueOf("IN_PROGRESS"));
         assertNotNull(ConversationState.valueOf("ERROR"));
@@ -178,7 +178,7 @@ class ModelRecordTest {
     @Test
     void setupAgentRequestBuilder() {
         SetupAgentRequest request = SetupAgentRequest.builder()
-                .name("Test Bot")
+                .agentName("Test Bot")
                 .systemPrompt("You are helpful.")
                 .provider("openai")
                 .model("gpt-4o")
@@ -186,7 +186,7 @@ class ModelRecordTest {
                 .environment("production")
                 .build();
 
-        assertEquals("Test Bot", request.name());
+        assertEquals("Test Bot", request.agentName());
         assertEquals("You are helpful.", request.systemPrompt());
         assertEquals("openai", request.provider());
         assertEquals("gpt-4o", request.model());
@@ -197,10 +197,10 @@ class ModelRecordTest {
     @Test
     void setupAgentRequestJsonRoundtrip() throws Exception {
         SetupAgentRequest request = SetupAgentRequest.builder()
-                .name("Bot").systemPrompt("Prompt").build();
+                .agentName("Bot").systemPrompt("Prompt").build();
 
         String json = mapper.writeValueAsString(request);
-        assertTrue(json.contains("\"name\":\"Bot\""));
+        assertTrue(json.contains("\"agentName\":\"Bot\""));
         assertTrue(json.contains("\"systemPrompt\":\"Prompt\""));
     }
 
@@ -209,7 +209,7 @@ class ModelRecordTest {
     @Test
     void createApiAgentRequestBuilder() {
         CreateApiAgentRequest request = CreateApiAgentRequest.builder()
-                .name("API Bot")
+                .agentName("API Bot")
                 .systemPrompt("You call APIs.")
                 .openApiSpec("openapi: 3.0.0\ninfo: {}")
                 .provider("anthropic")
@@ -217,7 +217,7 @@ class ModelRecordTest {
                 .deploy(false)
                 .build();
 
-        assertEquals("API Bot", request.name());
+        assertEquals("API Bot", request.agentName());
         assertEquals("You call APIs.", request.systemPrompt());
         assertNotNull(request.openApiSpec());
         assertFalse(request.deploy());
@@ -292,13 +292,13 @@ class ModelRecordTest {
     @Test
     void agentDeploymentStatusFields() {
         AgentDeploymentStatus status = new AgentDeploymentStatus(
-                Environment.PRODUCTION, "agent-1", 2, DeploymentStatus.READY, "My Agent");
+                Environment.PRODUCTION, "agent-1", 2, DeploymentStatus.READY, Map.of("name", "My Agent"));
 
         assertEquals(Environment.PRODUCTION, status.environment());
         assertEquals("agent-1", status.agentId());
         assertEquals(2, status.agentVersion());
         assertEquals(DeploymentStatus.READY, status.status());
-        assertEquals("My Agent", status.descriptorName());
+        assertEquals("My Agent", status.descriptor().get("name"));
     }
 
     // --- SetupResult ---
