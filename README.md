@@ -146,7 +146,7 @@ mc.end();
 ```java
 // Standard agent
 SetupResult result = eddi.setup()
-    .name("Customer Support Bot")
+    .agentName("Customer Support Bot")
     .systemPrompt("You are a helpful support agent for Acme Corp...")
     .provider("openai").model("gpt-4o")
     .apiKey(config.openaiKey())
@@ -156,7 +156,7 @@ SetupResult result = eddi.setup()
 
 // API agent from OpenAPI spec
 SetupResult apiResult = eddi.setupApi()
-    .name("API Bot")
+    .agentName("API Bot")
     .systemPrompt("You call APIs on behalf of users.")
     .openApiSpec(openApiYaml)
     .deploy(true)

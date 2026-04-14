@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [6.0.0] — 2026-04-12
+## [6.0.0] — 2026-04-15
 
 ### Added
 - **Fluent Client API** — `EddiClient` CDI bean with `chat()`, `agent()`, `managed()`, `group()`, `setup()`, `admin()`, `logs()`, `coordinator()`

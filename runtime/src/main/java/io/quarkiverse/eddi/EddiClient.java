@@ -46,7 +46,7 @@ import io.smallrye.mutiny.Uni;
  *
  * // Fluent setup
  * SetupResult result = eddi.setup()
- *         .name("Support Bot").systemPrompt("You are helpful.")
+ *         .agentName("Support Bot").systemPrompt("You are helpful.")
  *         .provider("openai").model("gpt-4o")
  *         .deploy(true).create();
  * }</pre>
@@ -173,7 +173,7 @@ public class EddiClient {
      *
      * <pre>{@code
      * SetupResult result = eddi.setup()
-     *         .name("Bot").systemPrompt("Be helpful.")
+     *         .agentName("Bot").systemPrompt("Be helpful.")
      *         .provider("openai").model("gpt-4o")
      *         .deploy(true).create();
      * }</pre>
@@ -189,7 +189,7 @@ public class EddiClient {
      *
      * <pre>{@code
      * SetupResult result = eddi.setupApi()
-     *         .name("API Bot").systemPrompt("You call APIs.")
+     *         .agentName("API Bot").systemPrompt("You call APIs.")
      *         .openApiSpec(spec).deploy(true).create();
      * }</pre>
      */

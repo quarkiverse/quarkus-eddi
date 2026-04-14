@@ -8,6 +8,7 @@ package io.quarkiverse.eddi.model;
 public enum ConversationState {
     READY,
     IN_PROGRESS,
-    ERROR,
-    ENDED
+    ENDED,
+    EXECUTION_INTERRUPTED,
+    ERROR
 }

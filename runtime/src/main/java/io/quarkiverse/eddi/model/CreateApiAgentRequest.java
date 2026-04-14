@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * {@code POST /administration/agents/setup-api}.
  */
 public record CreateApiAgentRequest(
-        @JsonProperty(required = true) String name,
+        @JsonProperty(required = true) String agentName,
         @JsonProperty(required = true) String systemPrompt,
         @JsonProperty(required = true) String openApiSpec,
         String provider,
@@ -34,7 +34,7 @@ public record CreateApiAgentRequest(
      */
     @SuppressWarnings("unchecked")
     public static class Builder<T extends Builder<T>> {
-        private String name;
+        private String agentName;
         private String systemPrompt;
         private String openApiSpec;
         private String provider;
@@ -52,8 +52,8 @@ public record CreateApiAgentRequest(
             return (T) this;
         }
 
-        public T name(String name) {
-            this.name = name;
+        public T agentName(String agentName) {
+            this.agentName = agentName;
             return self();
         }
 
@@ -118,7 +118,7 @@ public record CreateApiAgentRequest(
         }
 
         public CreateApiAgentRequest build() {
-            return new CreateApiAgentRequest(name, systemPrompt, openApiSpec, provider, model, apiKey,
+            return new CreateApiAgentRequest(agentName, systemPrompt, openApiSpec, provider, model, apiKey,
                     apiBaseUrl, apiAuth, endpoints, enableQuickReplies, enableSentimentAnalysis, deploy, environment);
         }
     }

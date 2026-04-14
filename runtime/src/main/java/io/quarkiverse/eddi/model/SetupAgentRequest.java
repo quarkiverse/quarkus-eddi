@@ -12,7 +12,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *
  * <pre>{@code
  * var request = SetupAgentRequest.builder()
- *         .name("Support Bot")
+ *         .agentName("Support Bot")
  *         .systemPrompt("You are a helpful support agent.")
  *         .provider("openai").model("gpt-4o")
  *         .apiKey(config.openaiKey())
@@ -21,7 +21,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * }</pre>
  */
 public record SetupAgentRequest(
-        @JsonProperty(required = true) String name,
+        @JsonProperty(required = true) String agentName,
         @JsonProperty(required = true) String systemPrompt,
         String provider,
         String model,
@@ -47,7 +47,7 @@ public record SetupAgentRequest(
      */
     @SuppressWarnings("unchecked")
     public static class Builder<T extends Builder<T>> {
-        private String name;
+        private String agentName;
         private String systemPrompt;
         private String provider;
         private String model;
@@ -66,8 +66,8 @@ public record SetupAgentRequest(
             return (T) this;
         }
 
-        public T name(String name) {
-            this.name = name;
+        public T agentName(String agentName) {
+            this.agentName = agentName;
             return self();
         }
 
@@ -137,7 +137,7 @@ public record SetupAgentRequest(
         }
 
         public SetupAgentRequest build() {
-            return new SetupAgentRequest(name, systemPrompt, provider, model, apiKey, baseUrl, introMessage,
+            return new SetupAgentRequest(agentName, systemPrompt, provider, model, apiKey, baseUrl, introMessage,
                     enableBuiltInTools, builtInToolsWhitelist, enableQuickReplies, enableSentimentAnalysis,
                     mcpServerUrls, deploy, environment);
         }

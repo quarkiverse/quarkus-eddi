@@ -102,7 +102,7 @@ class EddiRealServerIT {
         assertNotNull(statuses);
         LOG.info("Deployed agents: " + statuses.size());
         statuses.forEach(s -> LOG.info("  - " + s.agentId() + " v" + s.agentVersion()
-                + " [" + s.status() + "] " + s.descriptorName()));
+                + " [" + s.status() + "] " + (s.descriptor() != null ? s.descriptor().get("name") : "")));
     }
 
     // ═══════════════════════════════════════════════
