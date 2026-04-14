@@ -1,30 +1,27 @@
-<p align="center">
-  <a href="https://eddi.labs.ai">
-    <img src="https://raw.githubusercontent.com/labsai/EDDI/main/docs/eddi-logo.svg" alt="EDDI Logo" width="120" />
-  </a>
-</p>
+# Quarkus EDDI — The Official Quarkus SDK for EDDI
 
-<h1 align="center">Quarkus EDDI Extension</h1>
+[![CI](https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml/badge.svg)](https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml) [![Maven Central](https://img.shields.io/maven-central/v/io.quarkiverse.eddi/quarkus-eddi?color=f59e0b)](https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-<p align="center">
-  The official Quarkus SDK for <a href="https://github.com/labsai/EDDI">EDDI</a> — the enterprise AI orchestration platform.<br/>
-  Reactive-first · Typesafe · Zero-config Dev Services
-</p>
+The official [Quarkiverse](https://github.com/quarkiverse) extension for [**EDDI**](https://github.com/labsai/EDDI) — the enterprise multi-agent orchestration middleware. Add one dependency and get **fluent conversations, SSE streaming, Dev Services, and MCP tool bridging** — all Quarkus-native.
 
-<p align="center">
-  <a href="https://eddi.labs.ai"><img src="https://img.shields.io/badge/🌐_Website-eddi.labs.ai-0f172a?style=for-the-badge" alt="Website" /></a>&nbsp;
-  <a href="https://github.com/labsai/EDDI"><img src="https://img.shields.io/badge/⚙️_EDDI_Server-GitHub-181717?style=for-the-badge&logo=github" alt="EDDI Server" /></a>&nbsp;
-  <a href="https://github.com/quarkiverse/quarkus-eddi/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/quarkiverse/quarkus-eddi/build.yml?style=for-the-badge&label=CI&labelColor=27272a" alt="Build" /></a>&nbsp;
-  <a href="https://search.maven.org/artifact/io.quarkiverse.eddi/quarkus-eddi"><img src="https://img.shields.io/maven-central/v/io.quarkiverse.eddi/quarkus-eddi?style=for-the-badge&color=f59e0b&labelColor=27272a&label=Maven%20Central" alt="Maven Central" /></a>
-</p>
+Built for **EDDI v6**. Reactive-first. Typesafe. Zero-config in dev mode.
+
+**Latest version: 6.0.0** · [Website](https://eddi.labs.ai/) · [Documentation](https://docs.labs.ai/) · [EDDI Server](https://github.com/labsai/EDDI) · License: Apache 2.0
 
 ---
 
-## 🤔 What is this?
+## 📑 Table of Contents
 
-**quarkus-eddi** is a [Quarkiverse](https://github.com/quarkiverse) extension that provides a Quarkus-native SDK for the [EDDI](https://github.com/labsai/EDDI) conversational AI platform. Instead of manually wiring REST clients, managing conversation lifecycles, and configuring SSE streams — you add one dependency and get all of it out of the box.
-
-> 🧩 This extension is built exclusively for **EDDI v6** and follows Quarkiverse standards for seamless integration into the Quarkus ecosystem.
+- [✨ Features](#-features)
+- [📦 Installation](#-installation)
+- [⚡ Quick Start](#-quick-start)
+- [🔗 @EddiAgent — Declarative Endpoints](#-eddiagentkind---declarative-endpoint-wiring-)
+- [🛠️ @EddiTool — MCP Tool Bridge](#️-edditool--mcp-tool-bridge)
+- [⚙️ Configuration](#️-configuration)
+- [🏛️ Architecture](#️-architecture)
+- [🧪 Testing](#-testing)
+- [📦 The EDDI Ecosystem](#-the-eddi-ecosystem)
+- [📜 License](#-license)
 
 ---
 
@@ -38,6 +35,7 @@
 | 🤖 | **Managed Agents** | Intent-based conversations — no conversation ID management needed |
 | 🔗 | **@EddiAgent** 🧪 | Declarative annotation → auto-generated REST/SSE endpoints at build time *(experimental)* |
 | 🛠️ | **@EddiTool MCP Bridge** | Expose CDI methods as MCP tools EDDI can call back — transparently bridges to `quarkus-mcp-server-http` |
+| 👥 | **Group Discussions** | Multi-agent debates with structured discussion styles |
 | 🔐 | **API Key Auth** | Auto-propagated Bearer token via `quarkus.eddi.api-key` |
 | 💚 | **Health Check** | Async readiness probe for EDDI connectivity |
 
@@ -287,25 +285,22 @@ The extension ships with a comprehensive test suite:
 
 | | Repo | Description |
 |---|---|---|
-| 🧠 | [**EDDI**](https://github.com/labsai/EDDI) | Core AI orchestration engine |
-| 🖥️ | [**EDDI-Manager**](https://github.com/labsai/EDDI-Manager) | Visual management UI (React 19) |
-| 💬 | [**eddi-chat-ui**](https://github.com/labsai/eddi-chat-ui) | Embeddable chat widget |
+| 🧠 | [**EDDI**](https://github.com/labsai/EDDI) | Core AI orchestration engine (Java 25, Quarkus) |
+| 🖥️ | [**EDDI-Manager**](https://github.com/labsai/EDDI-Manager) | Admin dashboard (React 19, Vite, Tailwind) |
+| 💬 | [**eddi-chat-ui**](https://github.com/labsai/eddi-chat-ui) | Embeddable chat widget (React, TypeScript) |
 | ☸️ | [**EDDI-Operator**](https://github.com/labsai/EDDI-operator) | Kubernetes operator |
 | 📦 | [**quarkus-eddi**](https://github.com/quarkiverse/quarkus-eddi) | This repo — Quarkus SDK |
-| 🌐 | [**EDDI Website**](https://github.com/labsai/EDDI-LABS-AI-Website) | Marketing site at [eddi.labs.ai](https://eddi.labs.ai) |
+| 🌐 | [**EDDI Website**](https://eddi.labs.ai) | Documentation & marketing site |
 
 ---
 
-## 🔗 Quick Links
+## 🤝 Contributing
 
-| | Link |
-|---|---|
-| 🌐 | **Website:** [eddi.labs.ai](https://eddi.labs.ai) |
-| ⚙️ | **EDDI Server:** [github.com/labsai/EDDI](https://github.com/labsai/EDDI) |
-| 📖 | **Documentation:** [docs.labs.ai](https://docs.labs.ai) |
-| 🐳 | **Docker Hub:** [hub.docker.com/r/labsai/eddi](https://hub.docker.com/r/labsai/eddi) |
-| 💬 | **Discussions:** [GitHub Discussions](https://github.com/labsai/EDDI/discussions) |
-| 🐛 | **Report a Bug:** [GitHub Issues](https://github.com/quarkiverse/quarkus-eddi/issues) |
+We welcome contributions! Please open an issue or submit a pull request. See the [EDDI Contributing Guide](https://github.com/labsai/EDDI/blob/main/CONTRIBUTING.md) for conventions.
+
+## 🔒 Security
+
+Please report security vulnerabilities privately — see the [EDDI Security Policy](https://github.com/labsai/EDDI/blob/main/SECURITY.md).
 
 ---
 
@@ -313,8 +308,4 @@ The extension ships with a comprehensive test suite:
 
 Apache License 2.0 — see [LICENSE](LICENSE) for details.
 
----
-
-<p align="center">
-  Part of the <a href="https://eddi.labs.ai">EDDI</a> ecosystem. Developed with ❤️ in Europe.
-</p>
+Part of the [EDDI](https://eddi.labs.ai) ecosystem. Developed with ❤️ in Europe.
