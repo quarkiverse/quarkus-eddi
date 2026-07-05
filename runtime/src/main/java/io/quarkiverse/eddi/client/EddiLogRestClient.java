@@ -37,12 +37,13 @@ public interface EddiLogRestClient {
             @QueryParam("limit") @DefaultValue("100") int limit);
 
     /**
-     * Get historical logs from persistent storage.
+     * Get historical logs from persistent storage. Returns the same typed
+     * {@link LogEntry} list as {@link #getRecentLogs}.
      */
     @GET
     @Path("/history")
     @Produces(MediaType.APPLICATION_JSON)
-    Uni<List<Map<String, Object>>> getHistoryLogs(
+    Uni<List<LogEntry>> getHistoryLogs(
             @QueryParam("environment") String environment,
             @QueryParam("agentId") String agentId,
             @QueryParam("agentVersion") Integer agentVersion,

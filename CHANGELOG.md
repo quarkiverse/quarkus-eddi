@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added — HITL (Human-in-the-Loop) support
+
+Aligns the SDK with EDDI v6's Human-in-the-Loop framework, in which a conversation
+pauses in the `AWAITING_HUMAN` state pending a human approval decision.
+
+- **`ConversationState.AWAITING_HUMAN`** — the missing sixth server constant (its absence
+  previously crashed any status read of a paused conversation).
+- **HITL request models** — `HitlDecision`, `HitlVerdict`, `ToolCallDecision`,
+  `GroupApprovalRequest`, and the `PendingApprovalSummary` inbox model.
+- **Single-agent HITL endpoints** on `EddiAgentRestClient` — `resume`, `approval-status`,
+  `pending-approvals`, and `cancel`.
+- **Group HITL endpoints** on `EddiGroupRestClient` — `approve` (+ SSE `approve/stream`),
+  `approval-status`, per-group and cross-group `pending-approvals`, and `cancel`. The client
+  now roots at `/groups` so the cross-group inbox route is reachable.
+- **Group SSE streaming** — `discuss/stream` and `approve/stream` (`Multi<StreamToken>`).
+- **Facade DX** — `Conversation.isAwaitingHuman()/resume()/approve()/reject()/approvalStatus()/cancel()`;
+  `EddiClient.approvals()`; group approve/status/inbox on `GroupBuilder`.
+- **`ConversationResult`** now surfaces HITL pause metadata (`hitlPauseType`,
+  `hitlPausedAt`, `hitlPendingToolNames`, `undoAvailable`, `redoAvailable`) and
+  `isAwaitingHuman()`.
+
+### Fixed
+
+- **Agent response / quick-reply parsing** — `ConversationResult.text()` and
+  `quickReplies()` now correctly read the server's `TextOutputItem` (`text`) and
+  `QuickReply` (`value`) object shapes. The previous `List<String>` cast produced garbage
+  or threw `ClassCastException` on any real response.
+- **Streaming completion** — the `done` SSE event is now parsed into a structured
+  `ConversationResult` (text, quick replies, HITL metadata) instead of surfacing raw JSON.
+- **`chat()` / `chatFull()` / `chatAsync()`** no longer auto-end a conversation left in
+  `AWAITING_HUMAN` (which would cancel the pending approval).
+- **`EddiLogRestClient.getHistoryLogs`** now returns typed `List<LogEntry>` instead of an
+  untyped map.
+
+### Changed
+
+- MCP bridge dependency bumped to `quarkus-mcp-server-http:1.13.0` to match EDDI v6.
+- Removed the `StreamToken.isProgress()` helper — the server never emits a `progress` event.
+- Corrected the SDK-to-EDDI interface mapping table in `AGENTS.md`.
+
 ## [6.0.0] — 2026-04-15
 
 ### Added
