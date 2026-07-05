@@ -8,7 +8,6 @@ package io.quarkiverse.eddi.model;
  * <li>{@code task_start} — lifecycle task began (data: JSON with taskId, taskType, index)</li>
  * <li>{@code task_complete} — lifecycle task finished (data: JSON with taskId, taskType, durationMs)</li>
  * <li>{@code token} — LLM response token in real-time (data: raw text)</li>
- * <li>{@code progress} — workflow progress update</li>
  * <li>{@code done} — full conversation snapshot (data: JSON with conversationState, conversationOutputs)</li>
  * <li>{@code error} — error during processing (data: JSON with message)</li>
  * </ul>
@@ -44,13 +43,6 @@ public record StreamToken(String type, String data) {
      */
     public boolean isTaskComplete() {
         return "task_complete".equals(type);
-    }
-
-    /**
-     * Whether this is a workflow progress event.
-     */
-    public boolean isProgress() {
-        return "progress".equals(type);
     }
 
     /**
