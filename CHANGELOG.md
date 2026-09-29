@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+Verified against **EDDI 6.4.0** (REST contract audit, plus a live run through Dev Services).
+
+### Added — EDDI 6.4 API coverage
+
+- **Group conversation lifecycle** — `followUp`, `continueDiscussion` (+ SSE
+  `continueDiscussionStreaming`), `close`, `submitHumanInput` (HUMAN group members),
+  attachments on `discuss`, and `read` / `list` / `deleteAsync` on `GroupBuilder`.
+- **Admin** — `Conversation.resetState()` (`PATCH /agents/{id}/state`), live log tail
+  `logs().stream(...)` and coordinator event stream `coordinator().events()` (SSE).
+- **Setup models** — `hitlConfig` (new `HitlConfig` model) and `vaultKeyName` on
+  `SetupAgentRequest`; `llmBaseUrl`, `hitlConfig`, `mcpServerUrls`, `maxToolIterations`,
+  `vaultKeyName`, `apiAuthHeader` on `CreateApiAgentRequest`;
+  `SetupResult.apiKeyVaultReference`. Pre-6.4 record constructors are kept.
+- **`Context.secret(...)`** — per-request secret context values, never persisted by EDDI.
+- **`PendingApprovalSummary.pendingMemberId`** — the HUMAN member a group discussion waits on.
+- **Streaming** — `StreamListener.onToolCall`, `onTaskFailed` and a catch-all `onEvent`;
+  `StreamToken.isToolCall()` / `isTaskFailed()`; stream errors arrive as
+  `EddiStreamException` carrying EDDI's machine-readable `code()`.
+- **Integration tests** — `EddiDevServicesIT` (opt-in, `-Deddi.it.devservices=true`) boots real
+  EDDI + MongoDB through Dev Services; `*IT` tests now run via failsafe.
+
+### Fixed — EDDI 6.4 compatibility
+
+- **Dev Services could not start EDDI ≥ 6.3** — the container now receives the
+  unauthenticated-mode opt-outs (`EDDI_SECURITY_ALLOW_UNAUTHENTICATED`,
+  `EDDI_MCP_ALLOW_UNAUTHENTICATED`, `EDDI_SECRETSTORE_ALLOW_UNAUTHENTICATED`) that EDDI's
+  startup guards require when OIDC is off. Default images pinned to `labsai/eddi:6.4.0`
+  and `mongo:7.0.14`.
+- **Readiness check** probes EDDI's public `/q/health/ready` instead of the admin-only
+  coordinator status, which reported DOWN for non-admin API keys.
+- **`@EddiAgent` endpoints now work** — generated resources are registered through
+  Quarkus REST's `GeneratedJaxRsResourceBuildItem` and responses are written as JSON.
+  Unsupported `@OnMessage` / `@OnResponse` signatures now fail the build.
+- **Streaming task events** — `onTaskStart` / `onTaskComplete` receive the parsed
+  `taskId`, `taskType`, `index` / `durationMs` instead of the raw JSON and event name.
+- **Streamed HITL pauses** — the `done` event of an `AWAITING_HUMAN` turn is completed
+  with the pause type and pending tool names (the SSE payload omits them).
+
+### Changed
+
+- Quarkus 3.17.7 → 3.39.5, quarkiverse-parent 18 → 24, `quarkus-mcp-server-http` → 1.13.2
+  (all matching EDDI 6.4), Testcontainers 2 (`testcontainers-mongodb`), WireMock 3.13.2,
+  GitHub Actions `checkout@v6`, `setup-java@v5`, `ghaction-import-gpg@v7`.
+- The runtime now depends on `quarkus-rest-jackson` (was `quarkus-rest`).
+- Removed the never-implemented `quarkus.eddi.devservices.seed-demo-agent` property.
+- `EddiRealServerIT` is opt-in via `-Deddi.it.url=...` instead of auto-detecting `:7070`.
+
 ### Added — HITL (Human-in-the-Loop) support
 
 Aligns the SDK with EDDI v6's Human-in-the-Loop framework, in which a conversation
@@ -40,7 +87,6 @@ pauses in the `AWAITING_HUMAN` state pending a human approval decision.
 
 ### Changed
 
-- MCP bridge dependency bumped to `quarkus-mcp-server-http:1.13.0` to match EDDI v6.
 - Removed the `StreamToken.isProgress()` helper — the server never emits a `progress` event.
 - Corrected the SDK-to-EDDI interface mapping table in `AGENTS.md`.
 

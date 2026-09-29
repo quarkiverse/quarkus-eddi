@@ -31,14 +31,14 @@ Built for **EDDI v6**. Reactive-first. Typesafe. Zero-config in dev mode.
 |---|---|---|
 | 🚀 | **Dev Services** | Auto-starts EDDI + MongoDB via Testcontainers in `quarkus dev` — zero config |
 | 💬 | **Fluent Client API** | `@Inject EddiClient eddi;` → `eddi.chat("agent", "Hello!")` — one-liner conversations |
-| ⚡ | **SSE Streaming** | `Multi<StreamToken>` with full event types (`token`, `task_start`, `done`, `error`) |
+| ⚡ | **SSE Streaming** | `Multi<StreamToken>` or `StreamListener` callbacks for every EDDI event (`token`, `task_*`, `tool_call`, `done`, `error`) |
 | 🤖 | **Managed Agents** | Intent-based conversations — no conversation ID management needed |
-| 🔗 | **@EddiAgent** 🧪 | Declarative annotation → auto-generated REST/SSE endpoints at build time *(experimental)* |
+| 🔗 | **@EddiAgent** | Declarative annotation → auto-generated REST/SSE endpoints at build time |
 | 🛠️ | **@EddiTool MCP Bridge** | Expose CDI methods as MCP tools EDDI can call back — transparently bridges to `quarkus-mcp-server-http` |
-| 👥 | **Group Discussions** | Multi-agent debates with structured discussion styles |
+| 👥 | **Group Discussions** | Multi-agent debates — follow-ups, further rounds, human members, streaming |
 | ✋ | **HITL (Human-in-the-Loop)** | Pause on tool/rule approval → `resume`/`approve`/`reject`, poll `approval-status`, and an approvals inbox |
 | 🔐 | **API Key Auth** | Auto-propagated Bearer token via `quarkus.eddi.api-key` |
-| 💚 | **Health Check** | Async readiness probe for EDDI connectivity |
+| 💚 | **Health Check** | Async readiness probe against EDDI's `/q/health/ready` |
 
 ---
 
@@ -125,10 +125,17 @@ tokens.subscribe().with(token -> {
 // Callback-style
 conv.sayStreaming("Explain quantum physics", new StreamListener() {
     @Override public void onToken(String text) { System.out.print(text); }
+    @Override public void onToolCall(String tool) { log.info("calling " + tool); }
     @Override public void onComplete(ConversationResult result) { /* done */ }
-    @Override public void onError(Throwable error) { log.error("Failed", error); }
+    @Override public void onError(Throwable error) {
+        // EDDI-reported errors carry a machine-readable code, e.g. "awaiting_approval"
+        if (error instanceof EddiStreamException e && e.isAwaitingApproval()) { /* show approval UI */ }
+    }
 });
 ```
+
+Also available: `onTaskStart`, `onTaskComplete`, `onTaskFailed`, and `onEvent` for any other event.
+When a streamed turn pauses for approval, `onComplete` receives the pause type and pending tool names.
 
 ### 🤖 Managed Agents (Intent-based)
 
@@ -160,14 +167,29 @@ SetupResult apiResult = eddi.setupApi()
     .openApiSpec(openApiYaml)
     .deploy(true)
     .create();
+
+// Gate every tool call behind a human approval, and reuse a stored LLM key
+eddi.setup()
+    .agentName("Careful Bot").systemPrompt("...")
+    .provider("openai").model("gpt-4o")
+    .vaultKeyName("shared-openai")
+    .hitlConfig(HitlConfig.gateTools(List.of("*"), "Tool calls need a human OK"))
+    .create();
 ```
 
 ### 👥 Group Discussions (Multi-Agent Debates)
 
 ```java
-Response result = eddi.group("architect-panel")
-    .userId("user-123")
-    .discuss("Monolith vs microservices?");
+var panel = eddi.group("architect-panel").userId("user-123");
+Response result = panel.discuss("Monolith vs microservices?");
+
+// Once COMPLETED: ask one member, run another round, or close it for good
+panel.followUp(groupConversationId, "Security Reviewer", "What about auth?");
+panel.continueDiscussionAsync(groupConversationId, "And for a team of five?");
+panel.close(groupConversationId);
+
+// Human members: submit a turn when the discussion is AWAITING_HUMAN_INPUT
+panel.submitHumanInput(groupConversationId, "alice", "I'd keep the monolith.");
 ```
 
 ### ✋ Human-in-the-Loop (HITL)
@@ -213,9 +235,7 @@ eddi.group("architect-panel").approve(groupConversationId, "Ship it");
 
 ---
 
-## 🔗 @EddiAgent — Declarative Endpoint Wiring 🧪
-
-> ⚠️ **Experimental:** This feature has a known limitation with RESTEasy Reactive. Generated endpoints may not be fully functional in all scenarios. Tracked for resolution post-6.0.0.
+## 🔗 @EddiAgent — Declarative Endpoint Wiring
 
 Annotate a class to auto-generate REST + SSE endpoints that proxy to an EDDI agent:
 
@@ -238,6 +258,10 @@ public class SupportEndpoint {
 //            POST /api/support/stream        → SSE streaming
 //            Query param: ?userId=anonymous  → per-user conversation reuse
 ```
+
+Hooks take and return a `String` (`@OnMessage`) or a `ConversationResult` (`@OnResponse`), or return
+`void` to observe only; any other signature fails the build. `@OnResponse` applies to the
+non-streaming endpoint.
 
 ---
 
@@ -277,8 +301,8 @@ quarkus.eddi.environment=production
 
 # 🚀 Dev Services
 quarkus.eddi.devservices.enabled=true           # default: true in dev/test
-quarkus.eddi.devservices.image=labsai/eddi:6
-quarkus.eddi.devservices.mongodb-image=mongo:6.0
+quarkus.eddi.devservices.image=labsai/eddi:6.4.0
+quarkus.eddi.devservices.mongodb-image=mongo:7.0.14
 
 # 💚 Health check
 quarkus.eddi.health.enabled=true
@@ -317,9 +341,9 @@ The extension ships with a comprehensive test suite:
 | | Suite | What It Covers |
 |---|---|---|
 | ✅ | **Unit Tests** | Model records (incl. HITL models & `ConversationState`), snapshot parsing, API key filter, conversation lifecycle, client facade |
-| 🔌 | **WireMock Tests** | Full `EddiClient` flow and the HITL round-trip (`AWAITING_HUMAN` → `resume` → `READY`, approvals inbox) against a simulated EDDI v6 server (`EddiExtensionTest`, `EddiHitlTest`) |
-| 🐳 | **Dev Services** | Auto-starts EDDI + MongoDB via **Testcontainers** in dev/test mode |
-| 🌐 | **Real-server IT** | `EddiRealServerIT` runs against a locally running EDDI at `localhost:7070`; **auto-skips** when none is reachable |
+| 🔌 | **WireMock Tests** | Full `EddiClient` flow, HITL round-trip, group lifecycle and generated `@EddiAgent` endpoints against a simulated EDDI v6 server |
+| 🐳 | **Dev Services IT** | `mvn verify -Deddi.it.devservices=true` — boots real EDDI + MongoDB via Testcontainers and runs the SDK against it |
+| 🌐 | **Real-server IT** | `mvn verify -Deddi.it.url=http://localhost:7070` — runs against an EDDI you already have running |
 | 🔄 | **CI Matrix** | JDK 21 × {Ubuntu, Windows} |
 
 ---

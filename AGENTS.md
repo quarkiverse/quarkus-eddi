@@ -26,7 +26,8 @@
 
 - **No OpenAPI codegen**: EDDI's server uses `AsyncResponse` / `SseEventSink` which codegen can't handle. Client interfaces are hand-crafted for clean Mutiny types.
 - **Client paths mirror EDDI's v6 API**: All under `/agents` (conversations), `/administration` (deploy), `/groups/{groupId}/conversations` (group discussions).
-- **MCP dependency matches EDDI**: Uses `quarkus-mcp-server-http:1.13.0` (same artifact/version EDDI v6 uses). The bridge references the `@Tool`/`@ToolArg` annotations by `DotName` (no compile dependency), so this must be kept in sync with EDDI's `quarkus-mcp-server.version`.
+- **MCP dependency matches EDDI**: Uses `quarkus-mcp-server-http:1.13.2` (same artifact/version EDDI 6.4 uses). The bridge references the `@Tool`/`@ToolArg` annotations by `DotName` (no compile dependency), so this must be kept in sync with EDDI's `quarkus-mcp-server.version`.
+- **Track EDDI releases together**: keep `quarkus.version`, the MCP version and the Dev Services default image (`labsai/eddi:<x.y.z>`, `EddiDevServicesProcessor` + `EddiDevServicesBuildTimeConfig`) on the same EDDI release. EDDI ≥ 6.3 refuses to boot with OIDC off unless `EDDI_SECURITY_ALLOW_UNAUTHENTICATED`, `EDDI_MCP_ALLOW_UNAUTHENTICATED` and `EDDI_SECRETSTORE_ALLOW_UNAUTHENTICATED` are set — Dev Services sets them.
 
 ---
 
@@ -45,10 +46,10 @@ quarkus-eddi/
 │       ├── Conversation.java     → Conversation lifecycle wrapper (pkg-private constructor)
 │       ├── ManagedConversation.java → Intent-based conversation (no ID mgmt)
 │       ├── EddiDefaults.java     → Shared constants (DEFAULT_TIMEOUT, MAX_CONVERSATIONS)
-│       ├── EddiHealthCheck.java  → Async readiness probe (uses REST client)
+│       ├── EddiHealthCheck.java  → Async readiness probe (EDDI's /q/health/ready)
 │       ├── StreamListener.java   → SSE callback interface
 │       ├── annotations/          → @EddiAgent, @OnMessage, @OnResponse, @EddiTool, @ToolArg
-│       ├── client/               → 8 @RegisterRestClient interfaces + API key filter
+│       ├── client/               → 9 @RegisterRestClient interfaces + API key filter
 │       ├── config/               → EddiConfig (@ConfigMapping quarkus.eddi.*)
 │       ├── model/                → ConversationResult, StreamToken, InputData, etc.
 │       └── resources/META-INF/quarkus-extension.yaml → Extension catalog metadata
@@ -71,12 +72,14 @@ quarkus-eddi/
 ```bash
 mvn compile -DskipTests          # Compile check
 mvn test                         # Run tests
-mvn verify                       # Full verification including integration tests
+mvn verify                       # + *IT via failsafe (opt-in: -Deddi.it.devservices=true | -Deddi.it.url=...)
 ```
+
+> Windows: if WireMock tests fail with `Unable to establish loopback connection`, the checkout path is too long for Java's Unix-domain loopback socket under `target/`. Build from a shorter path or add `"-DargLine=-Djdk.net.unixdomain.tmpdir=C:/Windows/Temp"`.
 
 ### REST Client Interfaces
 
-The 8 REST client interfaces under `client/` map to EDDI's actual JAX-RS interfaces:
+The 9 REST client interfaces under `client/` map to EDDI's actual JAX-RS interfaces (verified against EDDI 6.4.0):
 
 | SDK Interface | EDDI Interface | Base Path |
 |---|---|---|
@@ -86,8 +89,9 @@ The 8 REST client interfaces under `client/` map to EDDI's actual JAX-RS interfa
 | `EddiAdminRestClient` | `IRestAgentAdministration` | `/administration` |
 | `EddiStreamingRestClient` | `IRestAgentEngineStreaming` | `/agents/{id}/stream` (SSE) |
 | `EddiManagedRestClient` | `IRestAgentManagement` | `/agents/managed` |
-| `EddiLogRestClient` | `IRestLogAdmin` | `/administration/logs` |
-| `EddiCoordinatorRestClient` | `IRestCoordinatorAdmin` | `/administration/coordinator` |
+| `EddiLogRestClient` | `IRestLogAdmin` | `/administration/logs` (incl. `/stream` SSE) |
+| `EddiCoordinatorRestClient` | `IRestCoordinatorAdmin` | `/administration/coordinator` (incl. `/stream` SSE) |
+| `EddiHealthRestClient` | SmallRye Health | `/q/health/ready` (public; used by `EddiHealthCheck`) |
 
 Additionally, `EddiApiKeyFilter` is a `@Provider` that auto-injects `quarkus.eddi.api-key` as a Bearer token on all client requests.
 
@@ -99,7 +103,7 @@ When EDDI's API changes, update these interfaces accordingly.
 - **Group ID**: `io.quarkiverse.eddi`
 - **Config prefix**: `quarkus.eddi.*`
 - **Feature name**: `eddi` (registered in `EddiProcessor`)
-- **REST client config key**: `eddi` (all 8 interfaces share this key)
+- **REST client config key**: `eddi` (all 9 interfaces share this key)
 - **Java version**: 21 (extension consumer minimum)
 
 ### Commit Conventions
@@ -131,7 +135,7 @@ docs: update configuration reference
 | `EddiConfig.java` | All `quarkus.eddi.*` runtime configuration |
 | `EddiClient.java` | Main fluent API facade (chat auto-ends conversations) |
 | `EddiDefaults.java` | Shared constants (DEFAULT_TIMEOUT, MAX_CONVERSATIONS_PER_AGENT) |
-| `EddiHealthCheck.java` | Async readiness probe using REST client |
+| `EddiHealthCheck.java` | Async readiness probe against EDDI's public `/q/health/ready` |
 | `EddiDevServicesProcessor.java` | Docker container lifecycle |
 | `EddiDevServicesBuildTimeConfig.java` | Build-time config for Dev Services (canonical source) |
 | `EddiAgentAnnotationProcessor.java` | @EddiAgent endpoint generation (bounded map, @PreDestroy) |
