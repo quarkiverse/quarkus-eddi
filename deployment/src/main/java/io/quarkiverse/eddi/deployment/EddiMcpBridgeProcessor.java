@@ -1,5 +1,6 @@
 package io.quarkiverse.eddi.deployment;
 
+import java.lang.reflect.Modifier;
 import java.util.*;
 
 import org.jboss.jandex.*;
@@ -8,34 +9,27 @@ import org.jboss.logging.Logger;
 import io.quarkiverse.eddi.annotations.EddiTool;
 import io.quarkiverse.eddi.annotations.ToolArg;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
-import io.quarkus.arc.deployment.AnnotationsTransformerBuildItem;
-import io.quarkus.arc.processor.AnnotationsTransformer;
+import io.quarkus.arc.deployment.GeneratedBeanBuildItem;
+import io.quarkus.arc.deployment.GeneratedBeanGizmoAdaptor;
+import io.quarkus.bootstrap.classloading.QuarkusClassLoader;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
+import io.quarkus.gizmo.*;
 
 /**
- * Build step processor that scans for {@link EddiTool} annotations and bridges
- * them to Quarkus MCP Server's {@code @Tool} / {@code @ToolArg} annotations.
+ * Build step processor that exposes {@link EddiTool} methods as Quarkus MCP Server
+ * tools, so EDDI agents can call back into the application.
  * <p>
- * EDDI v6 includes a native MCP server with {@code McpAdminTools},
- * {@code McpConversationTools}, etc. This bridge lets SDK users expose
- * <em>their own</em> CDI methods as additional MCP tools that EDDI discovers.
+ * For every class declaring {@code @EddiTool} methods a delegate bean
+ * {@code <Class>_EddiMcpTools} is generated. Each of its methods carries real
+ * {@code @io.quarkiverse.mcp.server.Tool} / {@code @ToolArg} annotations and
+ * forwards to the user's bean. (Annotation transformers are not enough: the MCP
+ * server extension reads the declared annotations of bean classes.)
  * <p>
- * The implementation uses Quarkus's {@link AnnotationsTransformerBuildItem} to
- * transparently add {@code @io.quarkiverse.mcp.server.Tool} and
- * {@code @io.quarkiverse.mcp.server.ToolArg} annotations at build time.
- * This means the Quarkus MCP Server extension handles all registration,
- * schema generation, and runtime invocation automatically.
- * <p>
- * The flow:
- * <ol>
- * <li>At build time: transform {@code @EddiTool} → {@code @Tool},
- * {@code @ToolArg} → MCP {@code @ToolArg}</li>
- * <li>The MCP server extension discovers and registers the tools</li>
- * <li>At runtime: EDDI calls the MCP endpoint to invoke tools during
- * conversation processing</li>
- * </ol>
+ * The MCP annotations are referenced by name, so the extension has no compile
+ * dependency on {@code quarkus-mcp-server-http}; nothing is generated unless the
+ * application has it on the classpath.
  */
 public class EddiMcpBridgeProcessor {
 
@@ -43,155 +37,140 @@ public class EddiMcpBridgeProcessor {
     private static final DotName EDDI_TOOL = DotName.createSimple(EddiTool.class.getName());
     private static final DotName EDDI_TOOL_ARG = DotName.createSimple(ToolArg.class.getName());
 
-    // MCP Server annotations — referenced by name to avoid hard compile dependency
-    private static final DotName MCP_TOOL = DotName.createSimple("io.quarkiverse.mcp.server.Tool");
-    private static final DotName MCP_TOOL_ARG = DotName.createSimple("io.quarkiverse.mcp.server.ToolArg");
+    static final String MCP_TOOL = "io.quarkiverse.mcp.server.Tool";
+    static final String MCP_TOOL_ARG = "io.quarkiverse.mcp.server.ToolArg";
 
     @BuildStep
     void processEddiToolAnnotations(CombinedIndexBuildItem combinedIndex,
             BuildProducer<AdditionalBeanBuildItem> additionalBeans,
-            BuildProducer<AnnotationsTransformerBuildItem> annotationsTransformers) {
+            BuildProducer<GeneratedBeanBuildItem> generatedBeans) {
 
-        var index = combinedIndex.getIndex();
-        var annotations = index.getAnnotations(EDDI_TOOL);
-
+        var annotations = combinedIndex.getIndex().getAnnotations(EDDI_TOOL);
         if (annotations.isEmpty()) {
             return;
         }
 
-        // Check if MCP server is on the classpath
-        boolean mcpAvailable = isMcpServerAvailable();
-        if (!mcpAvailable) {
+        if (!QuarkusClassLoader.isClassPresentAtRuntime(MCP_TOOL)) {
             LOG.warnf("Found %d @EddiTool methods but quarkus-mcp-server-http is not on the classpath. "
-                    + "Add the dependency to enable MCP tool bridge.", annotations.size());
+                    + "Add the dependency to expose them as MCP tools.", annotations.size());
             return;
         }
 
-        // Track declaring classes to register them as CDI beans
-        Set<String> declaringClasses = new HashSet<>();
-        Set<String> toolMethodIds = new HashSet<>();
-
+        // Group tool methods by declaring class (sorted for reproducible builds)
+        Map<ClassInfo, List<MethodInfo>> toolsByClass = new TreeMap<>(Comparator.comparing(c -> c.name().toString()));
         for (AnnotationInstance annotation : annotations) {
             MethodInfo method = annotation.target().asMethod();
-            ClassInfo declaringClass = method.declaringClass();
-            String className = declaringClass.name().toString();
-            declaringClasses.add(className);
-
-            String description = annotation.value("description").asString();
-            var nameValue = annotation.value("name");
-            String toolName = (nameValue != null && !nameValue.asString().isEmpty())
-                    ? nameValue.asString()
-                    : method.name();
-
-            // Build a unique key for this method to match in the transformer
-            String methodId = className + "#" + method.name();
-            toolMethodIds.add(methodId);
-
-            LOG.infof("Bridging @EddiTool → @Tool: %s#%s → name=%s, description=%s",
-                    className, method.name(), toolName, description);
+            validate(method);
+            toolsByClass.computeIfAbsent(method.declaringClass(), c -> new ArrayList<>()).add(method);
         }
 
-        // Register declaring classes as CDI beans
-        for (String className : declaringClasses) {
+        var adaptor = new GeneratedBeanGizmoAdaptor(generatedBeans);
+        for (var entry : toolsByClass.entrySet()) {
+            String className = entry.getKey().name().toString();
+
+            // The user's class must be a bean so the delegate can inject it
             additionalBeans.produce(AdditionalBeanBuildItem.builder()
                     .addBeanClass(className)
                     .setDefaultScope(DotName.createSimple("jakarta.enterprise.context.ApplicationScoped"))
                     .setUnremovable()
                     .build());
+
+            generateDelegate(adaptor, className, entry.getValue());
         }
 
-        // Add annotation transformer that bridges @EddiTool → @Tool and @ToolArg → MCP @ToolArg
-        annotationsTransformers.produce(new AnnotationsTransformerBuildItem(
-                new EddiToolAnnotationsTransformer()));
-
-        LOG.infof("Registered %d @EddiTool methods from %d classes for MCP bridge",
-                annotations.size(), declaringClasses.size());
+        LOG.infof("Exposed %d @EddiTool methods from %d classes as MCP tools",
+                annotations.size(), toolsByClass.size());
     }
 
-    /**
-     * Check if the MCP server classes are available on the classpath.
-     */
-    private boolean isMcpServerAvailable() {
-        try {
-            Class.forName("io.quarkiverse.mcp.server.Tool", false,
-                    Thread.currentThread().getContextClassLoader());
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
+    private static void validate(MethodInfo method) {
+        if (Modifier.isStatic(method.flags()) || Modifier.isPrivate(method.flags())) {
+            throw new IllegalStateException(String.format(
+                    "@EddiTool method %s.%s must be a non-private instance method",
+                    method.declaringClass().name(), method.name()));
+        }
+        for (int i = 0; i < method.parametersCount(); i++) {
+            if (method.parameterName(i) == null) {
+                throw new IllegalStateException(String.format(
+                        "@EddiTool method %s.%s: parameter names are not available; compile with -parameters",
+                        method.declaringClass().name(), method.name()));
+            }
         }
     }
 
-    /**
-     * Annotations transformer that bridges EDDI SDK annotations to MCP Server annotations.
-     */
-    private static class EddiToolAnnotationsTransformer implements AnnotationsTransformer {
+    private static void generateDelegate(ClassOutput output, String className, List<MethodInfo> tools) {
+        String delegateName = className + "_EddiMcpTools";
 
-        @Override
-        public boolean appliesTo(AnnotationTarget.Kind kind) {
-            return kind == AnnotationTarget.Kind.METHOD || kind == AnnotationTarget.Kind.METHOD_PARAMETER;
-        }
+        try (ClassCreator creator = ClassCreator.builder()
+                .classOutput(output)
+                .className(delegateName)
+                .build()) {
 
-        @Override
-        public void transform(TransformationContext context) {
-            AnnotationTarget target = context.getTarget();
+            creator.addAnnotation("jakarta.inject.Singleton");
 
-            if (target.kind() == AnnotationTarget.Kind.METHOD) {
-                transformMethod(context);
-            } else if (target.kind() == AnnotationTarget.Kind.METHOD_PARAMETER) {
-                transformParameter(context);
+            // Package-private so ArC can inject it directly
+            FieldCreator delegateField = creator.getFieldCreator("delegate", className);
+            delegateField.setModifiers(0);
+            delegateField.addAnnotation("jakarta.inject.Inject");
+            FieldDescriptor delegate = delegateField.getFieldDescriptor();
+
+            for (MethodInfo tool : tools) {
+                generateToolMethod(creator, delegate, className, tool);
             }
         }
+    }
 
-        private void transformMethod(TransformationContext context) {
-            MethodInfo method = context.getTarget().asMethod();
-            AnnotationInstance eddiTool = method.annotation(EDDI_TOOL);
-            if (eddiTool == null) {
-                return;
+    private static void generateToolMethod(ClassCreator creator, FieldDescriptor delegate, String className,
+            MethodInfo tool) {
+        AnnotationInstance eddiTool = tool.annotation(EDDI_TOOL);
+        String description = eddiTool.value("description").asString();
+        AnnotationValue nameValue = eddiTool.value("name");
+        String toolName = nameValue != null && !nameValue.asString().isEmpty() ? nameValue.asString() : tool.name();
+
+        MethodDescriptor target = MethodDescriptor.of(tool);
+        try (MethodCreator method = creator.getMethodCreator(
+                MethodDescriptor.ofMethod(creator.getClassName(), tool.name(),
+                        target.getReturnType(), target.getParameterTypes()))) {
+
+            method.setModifiers(Modifier.PUBLIC);
+            if (tool.requiresGenericSignature()) {
+                // Keep generics so MCP derives the right JSON schema (e.g. List<String>)
+                method.setSignature(tool.genericSignature(typeVariable -> null));
             }
-
-            // Extract the description
-            String description = eddiTool.value("description").asString();
-            var nameValue = eddiTool.value("name");
-            String toolName = (nameValue != null && !nameValue.asString().isEmpty())
-                    ? nameValue.asString()
-                    : method.name();
-
-            // Add @io.quarkiverse.mcp.server.Tool(description = "...")
-            // The MCP server extension uses "name" for the tool name (sourced from method name by default)
-            context.transform()
-                    .add(MCP_TOOL, AnnotationValue.createStringValue("description", description))
-                    .done();
-        }
-
-        private void transformParameter(TransformationContext context) {
-            MethodParameterInfo paramInfo = context.getTarget().asMethodParameter();
-            MethodInfo method = paramInfo.method();
-
-            // Only transform parameters on @EddiTool-annotated methods
-            if (method.annotation(EDDI_TOOL) == null) {
-                return;
+            String[] parameterNames = new String[tool.parametersCount()];
+            for (int i = 0; i < tool.parametersCount(); i++) {
+                parameterNames[i] = tool.parameterName(i);
             }
+            method.setParameterNames(parameterNames);
 
-            // Check if this parameter has @ToolArg
-            AnnotationInstance eddiToolArg = null;
-            for (AnnotationInstance ann : method.annotations()) {
-                if (ann.name().equals(EDDI_TOOL_ARG)
-                        && ann.target().kind() == AnnotationTarget.Kind.METHOD_PARAMETER
-                        && ann.target().asMethodParameter().position() == paramInfo.position()) {
-                    eddiToolArg = ann;
-                    break;
+            AnnotationCreator mcpTool = method.addAnnotation(MCP_TOOL);
+            mcpTool.addValue("name", toolName);
+            mcpTool.addValue("description", description);
+
+            for (int i = 0; i < tool.parametersCount(); i++) {
+                AnnotationInstance eddiArg = tool.parameters().get(i).declaredAnnotation(EDDI_TOOL_ARG);
+                AnnotationCreator mcpArg = method.getParameterAnnotations(i).addAnnotation(MCP_TOOL_ARG);
+                mcpArg.addValue("name", parameterNames[i]);
+                if (eddiArg != null) {
+                    AnnotationValue argDescription = eddiArg.value("description");
+                    if (argDescription != null) {
+                        mcpArg.addValue("description", argDescription.asString());
+                    }
+                    AnnotationValue required = eddiArg.value("required");
+                    if (required != null) {
+                        mcpArg.addValue("required", required.asBoolean());
+                    }
                 }
             }
 
-            if (eddiToolArg != null) {
-                // Transform @ToolArg → @io.quarkiverse.mcp.server.ToolArg
-                var descValue = eddiToolArg.value("description");
-                String description = descValue != null ? descValue.asString() : "";
-
-                context.transform()
-                        .add(MCP_TOOL_ARG, AnnotationValue.createStringValue("description", description))
-                        .done();
+            ResultHandle bean = method.readInstanceField(delegate, method.getThis());
+            ResultHandle[] args = new ResultHandle[tool.parametersCount()];
+            for (int i = 0; i < args.length; i++) {
+                args[i] = method.getMethodParam(i);
             }
+            ResultHandle result = method.invokeVirtualMethod(target, bean, args);
+            method.returnValue(target.getReturnType().equals("V") ? null : result);
+
+            LOG.debugf("Bridged @EddiTool %s#%s → MCP tool '%s'", className, tool.name(), toolName);
         }
     }
 }

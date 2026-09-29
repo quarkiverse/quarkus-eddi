@@ -89,6 +89,13 @@
             <artifactId>rest-assured</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Exercises the @EddiTool → MCP bridge (EddiMcpBridgeTest); keep in sync with runtime/pom.xml -->
+        <dependency>
+            <groupId>io.quarkiverse.mcp</groupId>
+            <artifactId>quarkus-mcp-server-http</artifactId>
+            <version>1.13.2</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.wiremock</groupId>
             <artifactId>wiremock</artifactId>
