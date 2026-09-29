@@ -104,9 +104,12 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
                         .withHeader("Content-Type", "application/json")
                         .withBody("\"READY\"")));
 
-        // --- Health check probe (404 = server is up) ---
-        stubFor(get(urlPathEqualTo("/agents/health-check-probe/status"))
-                .willReturn(aResponse().withStatus(404)));
+        // --- EDDI's own readiness endpoint (probed by EddiHealthCheck) ---
+        stubFor(get(urlPathEqualTo("/q/health/ready"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\": \"UP\", \"checks\": []}")));
 
         // --- Admin: deployment statuses ---
         stubFor(get(urlPathMatching("/administration/[^/]+/deploymentstatus"))

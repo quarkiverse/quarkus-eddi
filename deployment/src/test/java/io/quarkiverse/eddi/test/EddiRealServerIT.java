@@ -15,6 +15,7 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import io.quarkiverse.eddi.Conversation;
 import io.quarkiverse.eddi.EddiClient;
@@ -25,25 +26,28 @@ import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
 
 /**
- * Integration tests against a <b>real EDDI server</b> running at localhost:7070.
+ * Integration tests against a <b>real, already running EDDI server</b>.
  * <p>
- * These tests are <b>automatically skipped</b> if EDDI is not reachable.
- * When EDDI is running, they prove end-to-end API contract compatibility
- * between the SDK and the actual EDDI v6 server.
- * <p>
- * To run these tests, start EDDI locally:
+ * Opt-in: skipped unless {@code -Deddi.it.url} is set, so a build never talks to
+ * whatever EDDI instance happens to be running locally. When enabled they prove
+ * end-to-end API contract compatibility between the SDK and the actual server.
+ * Note that {@code chatWithDeployedAgent} starts (and ends) a conversation with
+ * the first deployed agent.
  *
  * <pre>{@code
- * cd ../EDDI && ./mvnw compile quarkus:dev
+ * mvn verify -Deddi.it.url=http://localhost:7070
  * }</pre>
+ *
+ * To let the extension start its own EDDI instead, see {@link EddiDevServicesIT}.
  */
 @QuarkusTest
+@EnabledIfSystemProperty(named = "eddi.it.url", matches = ".+")
 @TestProfile(EddiRealServerIT.RealEddiProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class EddiRealServerIT {
 
     private static final Logger LOG = Logger.getLogger(EddiRealServerIT.class.getName());
-    private static final String EDDI_URL = "http://localhost:7070";
+    private static final String EDDI_URL = System.getProperty("eddi.it.url", "http://localhost:7070");
     private static boolean eddiAvailable = false;
 
     @Inject

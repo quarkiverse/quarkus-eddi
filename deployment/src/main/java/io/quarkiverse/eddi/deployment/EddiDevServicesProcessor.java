@@ -39,6 +39,9 @@ public class EddiDevServicesProcessor {
     private static final int EDDI_PORT = 7070;
     private static final String MONGO_NETWORK_ALIAS = "mongodb";
     private static final String DEV_SERVICE_LABEL = "quarkus-dev-service-eddi";
+    // Keep in sync with EddiDevServicesBuildTimeConfig and EDDI's docker-compose.yml
+    static final String DEFAULT_EDDI_IMAGE = "labsai/eddi:6.4.0";
+    static final String DEFAULT_MONGO_IMAGE = "mongo:7.0.14";
 
     // Static state survives live reloads
     private static volatile RunningEddiDevService runningService;
@@ -56,9 +59,9 @@ public class EddiDevServicesProcessor {
         boolean enabled = config.getOptionalValue("quarkus.eddi.devservices.enabled", Boolean.class)
                 .orElse(true);
         String eddiImage = config.getOptionalValue("quarkus.eddi.devservices.image", String.class)
-                .orElse("labsai/eddi:6");
+                .orElse(DEFAULT_EDDI_IMAGE);
         String mongoImage = config.getOptionalValue("quarkus.eddi.devservices.mongodb-image", String.class)
-                .orElse("mongo:6.0");
+                .orElse(DEFAULT_MONGO_IMAGE);
         boolean shared = config.getOptionalValue("quarkus.eddi.devservices.shared", Boolean.class)
                 .orElse(true);
         String serviceName = config.getOptionalValue("quarkus.eddi.devservices.service-name", String.class)
@@ -117,7 +120,15 @@ public class EddiDevServicesProcessor {
                     .withNetwork(network)
                     .withExposedPorts(EDDI_PORT)
                     .withEnv("MONGODB_CONNECTIONSTRING", mongoConnectionString)
+                    .withEnv("EDDI_DATASTORE_TYPE", "mongodb")
                     .withEnv("EDDI_VAULT_MASTER_KEY", "dev-services-key")
+                    // The image runs in prod mode with OIDC off; since EDDI 6.3 its
+                    // AuthStartupGuard / HighValueSurfaceGuard refuse to boot unless
+                    // unauthenticated access is explicitly opted into (dev only).
+                    .withEnv("QUARKUS_OIDC_TENANT_ENABLED", "false")
+                    .withEnv("EDDI_SECURITY_ALLOW_UNAUTHENTICATED", "true")
+                    .withEnv("EDDI_MCP_ALLOW_UNAUTHENTICATED", "true")
+                    .withEnv("EDDI_SECRETSTORE_ALLOW_UNAUTHENTICATED", "true")
                     .waitingFor(Wait.forHttp("/q/health/ready")
                             .forPort(EDDI_PORT)
                             .forStatusCode(200)

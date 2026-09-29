@@ -1,5 +1,7 @@
 package io.quarkiverse.eddi.test;
 
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
@@ -138,6 +140,16 @@ class EddiExtensionTest {
         assertNotNull(status);
         assertEquals("in-memory", status.coordinatorType());
         assertTrue(status.connected());
+    }
+
+    @Test
+    @Order(33)
+    void readinessReportsEddiUp() {
+        given()
+                .when().get("/q/health/ready")
+                .then()
+                .statusCode(200)
+                .body("checks.find { it.name == 'EDDI' }.status", equalTo("UP"));
     }
 
     @Test

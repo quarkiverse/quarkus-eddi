@@ -26,20 +26,14 @@ public interface EddiDevServicesBuildTimeConfig {
     /**
      * Docker image for the EDDI server.
      */
-    @WithDefault("labsai/eddi:6")
+    @WithDefault("labsai/eddi:6.4.0")
     String image();
 
     /**
      * Docker image for MongoDB.
      */
-    @WithDefault("mongo:6.0")
+    @WithDefault("mongo:7.0.14")
     String mongodbImage();
-
-    /**
-     * Whether to seed a demo agent on startup.
-     */
-    @WithDefault("false")
-    boolean seedDemoAgent();
 
     /**
      * Whether the EDDI Dev Service containers are shared across Quarkus apps.
