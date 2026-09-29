@@ -65,12 +65,10 @@
         </dependency>
 
         <!--
-            NOTE: quarkus-mcp-server-http-deployment is NOT a compile/test dependency.
-            The @EddiTool MCP bridge works via AnnotationsTransformer which adds
-            @Tool/@ToolArg annotations by DotName — it does NOT require the MCP
-            deployment artifact on the classpath. When users add quarkus-mcp-server-http
-            to their project, the MCP server extension picks up the transformed
-            annotations automatically.
+            NOTE: quarkus-mcp-server-http-deployment is NOT a compile dependency.
+            The @EddiTool MCP bridge generates delegate beans carrying @Tool/@ToolArg
+            referenced by name, and only when the application has quarkus-mcp-server-http
+            on its classpath; the MCP extension then registers them.
         -->
 
         <!-- Test dependencies -->
@@ -106,8 +104,8 @@
 
     <build>
         <plugins>
-            <!-- Runs *IT tests: EddiRealServerIT (skips unless EDDI is on :7070) and
-                 EddiDevServicesIT (opt-in via -Deddi.it.devservices=true) -->
+            <!-- Runs *IT tests, both opt-in: EddiRealServerIT (-Deddi.it.url=<EDDI base URL>) and
+                 EddiDevServicesIT (-Deddi.it.devservices=true) -->
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <executions>

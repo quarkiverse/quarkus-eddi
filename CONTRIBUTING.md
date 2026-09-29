@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Quarkus EDDI! This document provi
 
 - **JDK 21** or later
 - **Maven 3.9+** (or use the included `mvnw` wrapper)
-- **Docker** (for Dev Services / Testcontainers in tests)
+- **Docker** — only for Dev Services and the opt-in `EddiDevServicesIT`; the regular test suite uses WireMock and needs no Docker
 
 ## Building
 
@@ -14,11 +14,12 @@ Thank you for your interest in contributing to Quarkus EDDI! This document provi
 # Compile check
 ./mvnw compile -DskipTests
 
-# Run all tests (requires Docker for WireMock integration tests)
+# Unit tests + WireMock-based Quarkus tests (no Docker needed)
 ./mvnw test
 
-# Full verification including integration tests
-./mvnw verify
+# Also runs *IT tests via failsafe; they are skipped unless opted in:
+./mvnw verify -Deddi.it.devservices=true          # real EDDI + MongoDB via Dev Services (Docker)
+./mvnw verify -Deddi.it.url=http://localhost:7070  # an EDDI server you already run
 ```
 
 ## Project Structure
@@ -34,7 +35,7 @@ quarkus-eddi/
 
 ## Code Style
 
-- Follow existing code conventions (no specific formatter enforced)
+- Java sources are formatted and imports sorted automatically by every build (formatter + impsort from quarkiverse-parent); CI builds with `-Dno-format`, which fails on unformatted code, so build locally before pushing
 - Use `Uni<T>` return types for all reactive methods
 - Provide blocking convenience methods with `await().atMost(DEFAULT_TIMEOUT)`
 - Use Java records for immutable data types
@@ -58,16 +59,17 @@ docs: update configuration reference
 2. Add method to the appropriate `*RestClient.java` interface in `runtime/`
 3. Use `Uni<T>` return types (not blocking)
 4. Add a facade method in `EddiClient.java` if it improves DX
-5. Add WireMock stubs in `WireMockEddiResource.java` for testing
-6. Add integration tests in `EddiExtensionTest.java`
+5. Add WireMock stubs in `deployment/src/test/.../WireMockEddiResource.java`
+6. Add a test in the matching `deployment/src/test` class (`EddiExtensionTest`, `EddiGroupTest`, `EddiHitlTest`, `EddiStreamingTest`, ...), and to `EddiDevServicesIT` if it should be verified against a real server
 
 ## Testing
 
 | Test Type | Location | Description |
 |---|---|---|
 | Unit tests | `runtime/src/test/` | Pure logic tests (no CDI context) |
-| Integration tests | `deployment/src/test/` | Full Quarkus boot with WireMock |
-| Real server IT | `deployment/src/test/` | Auto-skipped if EDDI not running |
+| Quarkus tests | `deployment/src/test/` (`*Test`) | Full Quarkus boot against WireMock (`WireMockEddiResource`), incl. `@EddiAgent` and the MCP bridge |
+| Dev Services IT | `deployment/src/test/EddiDevServicesIT` | Opt-in: `-Deddi.it.devservices=true`; real EDDI + MongoDB containers |
+| Real server IT | `deployment/src/test/EddiRealServerIT` | Opt-in: `-Deddi.it.url=<EDDI base URL>` |
 
 ## Pull Requests
 

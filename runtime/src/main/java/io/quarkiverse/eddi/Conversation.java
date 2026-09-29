@@ -545,11 +545,10 @@ public class Conversation {
      * Parse an instant out of the raw snapshot map, returning {@code null} for
      * missing or unparseable values.
      * <p>
-     * The EDDI server runs {@code quarkus.jackson.write-dates-as-timestamps=true}
-     * with the {@code JavaTimeModule}, so an {@code Instant} is serialized as a
-     * fractional epoch-<em>seconds</em> number (e.g. {@code 1719964800.123000000}),
-     * which lands here as a {@link Number} after generic JSON parsing. An ISO-8601
-     * string is also accepted as a fallback.
+     * EDDI 6.4's REST layer serializes an {@code Instant} as an ISO-8601 string
+     * (its {@code SerializationCustomizer} overrides the global
+     * {@code write-dates-as-timestamps=true} for {@code Instant}). A number is still
+     * accepted and read as fractional epoch-<em>seconds</em> (e.g. {@code 1719964800.123}).
      */
     private static Instant parseInstant(Object raw) {
         if (raw instanceof Instant instant) {

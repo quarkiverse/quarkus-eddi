@@ -16,14 +16,15 @@ import java.lang.annotation.Target;
  *
  * <pre>{@code
  * @EddiTool(description = "Look up order status by order ID")
- * public OrderStatus lookupOrder(@ToolArg(description = "The order ID") String orderId) {
- *     return orderService.find(orderId);
+ * public String lookupOrder(@ToolArg(description = "The order ID") String orderId) {
+ *     return orderService.find(orderId).status();
  * }
  * }</pre>
- *
  * <p>
- * Configure which agents can see these tools via:
- * {@code quarkus.eddi.mcp-bridge.agents=support-bot,sales-bot}
+ * Requires {@code quarkus-mcp-server-http} in the application. The method must be a
+ * non-private instance method of a class compiled with {@code -parameters}; the MCP
+ * extension's rules for parameter and return types apply. Which EDDI agents use the
+ * tools is configured in EDDI (the agent's MCP server URLs).
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

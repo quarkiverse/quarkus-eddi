@@ -67,8 +67,10 @@ public interface EddiCoordinatorRestClient {
     Uni<Integer> purgeDeadLetters();
 
     /**
-     * Live-tail coordinator events via SSE (e.g. {@code task_completed},
-     * {@code task_failed}, {@code task_dead_lettered}).
+     * Live coordinator status via SSE. EDDI 6.4 sends {@code status} events only: one on
+     * connect, then one every 2 seconds, each carrying the {@link CoordinatorStatus} JSON
+     * (the same payload as {@link #getStatus()}). Individual task events are not streamed,
+     * although EDDI's OpenAPI description mentions them. The stream stays open until cancelled.
      */
     @GET
     @Path("/stream")

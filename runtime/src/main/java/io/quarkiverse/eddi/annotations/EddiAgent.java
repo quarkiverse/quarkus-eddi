@@ -14,15 +14,12 @@ import java.lang.annotation.Target;
  * Example:
  *
  * <pre>
- * {
- *     &#64;code
- *     &#64;EddiAgent(id = "support-bot", path = "/api/support", streaming = true)
- *     public class SupportEndpoint {
+ * &#64;EddiAgent(id = "support-bot", path = "/api/support")
+ * public class SupportEndpoint {
  *
- *         @OnMessage
- *         public String preProcess(String message) {
- *             return message.strip();
- *         }
+ *     &#64;OnMessage
+ *     public String preProcess(String message) {
+ *         return message.strip();
  *     }
  * }
  * </pre>
@@ -30,10 +27,14 @@ import java.lang.annotation.Target;
  * This generates:
  * <ul>
  * <li>{@code POST /api/support} — sends a message and returns the full response</li>
- * <li>{@code POST /api/support/stream} — SSE streaming variant (if {@code streaming = true})</li>
+ * <li>{@code POST /api/support/stream} — SSE streaming variant (unless {@code streaming = false})</li>
  * </ul>
  * Both accept a {@code text/plain} body and an optional {@code userId} query parameter
- * (default {@code anonymous}); each user keeps one EDDI conversation.
+ * (default {@code anonymous}); each user keeps one EDDI conversation, started with that userId.
+ * <p>
+ * <b>Security:</b> the generated endpoints do not authenticate callers and trust the
+ * {@code userId} query parameter as given. Protect the path with your own authentication,
+ * or call {@code EddiClient} from your own resource if the id must come from the principal.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)

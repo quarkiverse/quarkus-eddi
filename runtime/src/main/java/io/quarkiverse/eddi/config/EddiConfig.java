@@ -49,33 +49,9 @@ public interface EddiConfig {
     String environment();
 
     /**
-     * MCP Bridge configuration.
-     */
-    McpBridgeConfig mcpBridge();
-
-    /**
      * Health check configuration.
      */
     HealthConfig health();
-
-    /**
-     * MCP Tool Bridge sub-configuration.
-     */
-    interface McpBridgeConfig {
-
-        /**
-         * Whether the MCP tool bridge is enabled.
-         */
-        @WithDefault("true")
-        boolean enabled();
-
-        /**
-         * Comma-separated agent IDs that should discover bridge tools.
-         * Use "*" for all agents.
-         */
-        @WithDefault("*")
-        String agents();
-    }
 
     /**
      * Health check sub-configuration.

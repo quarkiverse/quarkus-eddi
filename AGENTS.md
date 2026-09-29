@@ -20,14 +20,14 @@
 1. **Dev Services** — Auto-start EDDI + MongoDB via Testcontainers in dev/test mode
 2. **Typesafe Client** — Hand-crafted REST client interfaces with Mutiny `Uni<T>` / `Multi<T>` return types
 3. **@EddiAgent** — Build-time annotation scanning generates JAX-RS endpoints that proxy to EDDI agents
-4. **@EddiTool (MCP Bridge)** — Expose CDI methods as MCP tools via annotation transformation to `quarkus-mcp-server-http`
+4. **@EddiTool (MCP Bridge)** — Expose CDI methods as MCP tools via generated `quarkus-mcp-server-http` `@Tool` delegate beans
 
 ### Key Design Decisions
 
 - **No OpenAPI codegen**: EDDI's server uses `AsyncResponse` / `SseEventSink` which codegen can't handle. Client interfaces are hand-crafted for clean Mutiny types.
-- **Client paths mirror EDDI's v6 API**: All under `/agents` (conversations), `/administration` (deploy), `/groups/{groupId}/conversations` (group discussions).
-- **MCP dependency matches EDDI**: Uses `quarkus-mcp-server-http:1.13.2` (same artifact/version EDDI 6.4 uses). The bridge references the `@Tool`/`@ToolArg` annotations by `DotName` (no compile dependency), so this must be kept in sync with EDDI's `quarkus-mcp-server.version`.
-- **Track EDDI releases together**: keep `quarkus.version`, the MCP version and the Dev Services default image (`labsai/eddi:<x.y.z>`, `EddiDevServicesProcessor` + `EddiDevServicesBuildTimeConfig`) on the same EDDI release. EDDI ≥ 6.3 refuses to boot with OIDC off unless `EDDI_SECURITY_ALLOW_UNAUTHENTICATED`, `EDDI_MCP_ALLOW_UNAUTHENTICATED` and `EDDI_SECRETSTORE_ALLOW_UNAUTHENTICATED` are set — Dev Services sets them.
+- **Client paths mirror EDDI's v6 API**: `/agents` (conversations, SSE streaming, `/agents/managed`), `/administration` (deploy, setup, logs, coordinator), `/groups` (group discussions under `/groups/{groupId}/conversations`, plus the cross-group `/groups/pending-approvals` inbox).
+- **MCP dependency matches EDDI**: Uses `quarkus-mcp-server-http:1.13.2` (same artifact/version EDDI 6.4 uses). The bridge references the `@Tool`/`@ToolArg` annotations by name (no compile dependency; `quarkus-mcp-server-http` is optional and must be added by the app), so this must be kept in sync with EDDI's `quarkus-mcp-server.version`.
+- **Track EDDI releases together**: keep `quarkus.version`, the MCP version and the Dev Services default image (`labsai/eddi:<x.y.z>` in `EddiDevServicesBuildTimeConfig`) on the same EDDI release. EDDI ≥ 6.3 refuses to boot with OIDC off unless `EDDI_SECURITY_ALLOW_UNAUTHENTICATED`, `EDDI_MCP_ALLOW_UNAUTHENTICATED` and `EDDI_SECRETSTORE_ALLOW_UNAUTHENTICATED` are set — Dev Services sets them.
 
 ---
 
@@ -37,7 +37,7 @@
 quarkus-eddi/
 ├── .github/
 │   ├── workflows/build.yml       → CI: matrix build (JDK 21, Ubuntu + Windows)
-│   ├── workflows/release.yml     → Quarkiverse release pipeline
+│   ├── workflows/pre-release.yml, release-prepare.yml, release-perform.yml → Quarkiverse release pipeline
 │   └── project.yml               → Release version metadata
 │
 ├── runtime/                    → Maven artifact: quarkus-eddi
@@ -56,11 +56,11 @@ quarkus-eddi/
 │
 └── deployment/                 → Maven artifact: quarkus-eddi-deployment
     └── io.quarkiverse.eddi.deployment/
-        ├── EddiProcessor.java                   → Feature registration
+        ├── EddiProcessor.java                   → Feature/bean registration, REST client defaults (url ← quarkus.eddi.url, read-timeout)
         ├── EddiDevServicesBuildTimeConfig.java   → Build-time Dev Services config (canonical)
         ├── EddiDevServicesProcessor.java         → Docker container management
         ├── EddiAgentAnnotationProcessor.java     → @EddiAgent build-time scan (bounded map, @PreDestroy)
-        └── EddiMcpBridgeProcessor.java           → @EddiTool → @Tool annotation transformer
+        └── EddiMcpBridgeProcessor.java           → @EddiTool → generated delegate beans with MCP @Tool/@ToolArg
 ```
 
 ---
@@ -93,7 +93,7 @@ The 9 REST client interfaces under `client/` map to EDDI's actual JAX-RS interfa
 | `EddiCoordinatorRestClient` | `IRestCoordinatorAdmin` | `/administration/coordinator` (incl. `/stream` SSE) |
 | `EddiHealthRestClient` | SmallRye Health | `/q/health/ready` (public; used by `EddiHealthCheck`) |
 
-Additionally, `EddiApiKeyFilter` is a `@Provider` that auto-injects `quarkus.eddi.api-key` as a Bearer token on all client requests.
+Additionally, `EddiApiKeyFilter` adds `quarkus.eddi.api-key` as a Bearer token. It is not a global `@Provider`: each client registers it with `@RegisterProvider(EddiApiKeyFilter.class)` — every client except `EddiHealthRestClient` (the readiness endpoint is public). New clients must register it too.
 
 When EDDI's API changes, update these interfaces accordingly.
 
@@ -134,13 +134,13 @@ docs: update configuration reference
 | `deployment/pom.xml` | Build-time dependencies (Testcontainers, MCP deployment, core-deployment) |
 | `EddiConfig.java` | All `quarkus.eddi.*` runtime configuration |
 | `EddiClient.java` | Main fluent API facade (chat auto-ends conversations) |
-| `EddiDefaults.java` | Shared constants (DEFAULT_TIMEOUT, MAX_CONVERSATIONS_PER_AGENT) |
+| `EddiDefaults.java` | Shared constants (DEFAULT_TIMEOUT fallback — `quarkus.eddi.timeout` wins in the facade; MAX_CONVERSATIONS_PER_AGENT) |
 | `EddiHealthCheck.java` | Async readiness probe against EDDI's public `/q/health/ready` |
 | `EddiDevServicesProcessor.java` | Docker container lifecycle |
 | `EddiDevServicesBuildTimeConfig.java` | Build-time config for Dev Services (canonical source) |
 | `EddiAgentAnnotationProcessor.java` | @EddiAgent endpoint generation (bounded map, @PreDestroy) |
-| `EddiMcpBridgeProcessor.java` | @EddiTool → @Tool annotation transformation bridge |
+| `EddiMcpBridgeProcessor.java` | @EddiTool → generated `<Class>_EddiMcpTools` delegate beans carrying MCP `@Tool`/`@ToolArg` |
 | `CHANGELOG.md` | Release notes |
 | `.github/workflows/build.yml` | CI — matrix build (JDK 21, Ubuntu + Windows) |
-| `.github/workflows/release.yml` | Quarkiverse release pipeline |
+| `.github/workflows/release-prepare.yml`, `release-perform.yml` | Quarkiverse release pipeline (shared Quarkiverse reusable workflows) |
 | `.github/project.yml` | Release version metadata |

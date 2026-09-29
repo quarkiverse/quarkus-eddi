@@ -90,8 +90,10 @@ public interface StreamListener {
     }
 
     /**
-     * Called if an error occurs during streaming. Errors reported by EDDI arrive as
-     * {@link EddiStreamException} with a machine-readable {@code code()}.
+     * Called if an error occurs during streaming. Errors that EDDI reports inside the
+     * stream ({@code error} events) arrive as {@link EddiStreamException} with a
+     * machine-readable {@code code()}. Rejections before the stream opens (e.g. HTTP 403,
+     * 404 or 413) arrive as {@link jakarta.ws.rs.WebApplicationException}.
      */
     default void onError(Throwable error) {
     }

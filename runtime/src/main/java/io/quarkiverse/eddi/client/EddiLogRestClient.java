@@ -18,10 +18,8 @@ import io.smallrye.mutiny.Uni;
 /**
  * MicroProfile REST Client for EDDI v6's log administration API.
  * <p>
- * Maps to EDDI's {@code IRestLogAdmin} at {@code /administration/logs}.
- * <p>
- * Note: The {@code /stream} SSE endpoint is not exposed here — use
- * Vert.x EventBus or a dedicated SSE client for live log tailing.
+ * Maps to EDDI's {@code IRestLogAdmin} at {@code /administration/logs}, including the
+ * {@code /stream} SSE live tail ({@link #streamLogs}).
  */
 @RegisterRestClient(configKey = "eddi")
 @RegisterProvider(EddiApiKeyFilter.class)
@@ -65,7 +63,9 @@ public interface EddiLogRestClient {
     Uni<Map<String, String>> getInstanceId();
 
     /**
-     * Live-tail log entries via SSE as they occur.
+     * Live-tail log entries via SSE as they occur. EDDI sends each entry as a {@code log}
+     * event whose data is the JSON {@link LogEntry}, plus periodic heartbeat comment frames
+     * (dropped by {@code EddiClient.logs().stream(...)}). The stream stays open until cancelled.
      */
     @GET
     @Path("/stream")

@@ -76,21 +76,6 @@ class EddiApiKeyFilterTest {
             }
 
             @Override
-            public McpBridgeConfig mcpBridge() {
-                return new McpBridgeConfig() {
-                    @Override
-                    public boolean enabled() {
-                        return true;
-                    }
-
-                    @Override
-                    public String agents() {
-                        return "*";
-                    }
-                };
-            }
-
-            @Override
             public HealthConfig health() {
                 return new HealthConfig() {
                     @Override
