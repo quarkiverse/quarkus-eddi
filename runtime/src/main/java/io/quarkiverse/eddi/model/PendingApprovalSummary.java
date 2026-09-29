@@ -25,6 +25,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *        {@code "TOOL_CALL"} = gated tool pause
  * @param toolNames names only (no arguments) of the gated tool calls, for
  *        TOOL_CALL pauses
+ * @param pendingMemberId for a group discussion awaiting human input, the HUMAN
+ *        member whose turn it is
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PendingApprovalSummary(
@@ -37,7 +39,8 @@ public record PendingApprovalSummary(
         String timeoutPolicy,
         String approvalTimeout,
         String pauseType,
-        List<String> toolNames) {
+        List<String> toolNames,
+        String pendingMemberId) {
 
     /** Whether this pause is a gated tool-call pause (vs a behavior-rule pause). */
     public boolean isToolCallPause() {

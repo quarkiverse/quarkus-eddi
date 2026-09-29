@@ -309,7 +309,7 @@ class ModelRecordTest {
     void setupResultFields() {
         SetupResult result = new SetupResult("setup_complete", "agent-1", "Bot",
                 "openai", "gpt-4o", true, "READY", null, null, true, false,
-                Map.of("agent", "/agents/agent-1"));
+                Map.of("agent", "/agents/agent-1"), "${vault:setup.bot.apiKey}");
 
         assertEquals("setup_complete", result.action());
         assertTrue(result.deployed());
@@ -377,7 +377,7 @@ class ModelRecordTest {
         PendingApprovalSummary summary = new PendingApprovalSummary(
                 "conv-1", "agent-1", null, "user-1", null,
                 "tool approval required", "REJECT", null, "TOOL_CALL",
-                List.of("lookupOrder"));
+                List.of("lookupOrder"), null);
 
         assertEquals("conv-1", summary.conversationId());
         assertEquals("agent-1", summary.agentId());
@@ -404,5 +404,50 @@ class ModelRecordTest {
         assertEquals("conv-1", summary.conversationId());
         assertEquals("RULE", summary.pauseType());
         assertFalse(summary.isToolCallPause());
+    }
+
+    // --- EDDI 6.4 additions ---
+
+    @Test
+    void secretContextSerializesFlagAndPlainContextOmitsIt() throws Exception {
+        assertTrue(mapper.writeValueAsString(Context.secret("tok")).contains("\"secret\":true"));
+        assertFalse(mapper.writeValueAsString(Context.of("x")).contains("secret"));
+    }
+
+    @Test
+    void setupAgentRequestCarriesHitlConfigAndVaultKeyName() throws Exception {
+        SetupAgentRequest request = SetupAgentRequest.builder()
+                .agentName("Bot").systemPrompt("Be nice")
+                .hitlConfig(HitlConfig.gateTools(List.of("*"), "needs approval"))
+                .vaultKeyName("shared-openai")
+                .build();
+
+        var json = mapper.readTree(mapper.writeValueAsString(request));
+        assertEquals("shared-openai", json.get("vaultKeyName").asText());
+        assertEquals("*", json.at("/hitlConfig/toolApprovals/requireApproval/0").asText());
+        assertEquals("needs approval", json.at("/hitlConfig/toolApprovals/pauseReason").asText());
+        assertTrue(json.at("/hitlConfig/timeoutPolicy").isMissingNode(), "unset fields are omitted");
+    }
+
+    @Test
+    void createApiAgentRequestCarriesNewFields() throws Exception {
+        CreateApiAgentRequest request = CreateApiAgentRequest.builder()
+                .agentName("Api").systemPrompt("p").openApiSpec("{}")
+                .llmBaseUrl("http://llm").mcpServerUrls("http://mcp").maxToolIterations(5)
+                .vaultKeyName("k").apiAuthHeader("X-Api-Key")
+                .build();
+
+        var json = mapper.readTree(mapper.writeValueAsString(request));
+        assertEquals("http://llm", json.get("llmBaseUrl").asText());
+        assertEquals("http://mcp", json.get("mcpServerUrls").asText());
+        assertEquals(5, json.get("maxToolIterations").asInt());
+        assertEquals("X-Api-Key", json.get("apiAuthHeader").asText());
+    }
+
+    @Test
+    void pendingApprovalSummaryReadsPendingMemberId() throws Exception {
+        PendingApprovalSummary summary = mapper.readValue(
+                "{\"conversationId\":\"gc-1\",\"pendingMemberId\":\"alice\"}", PendingApprovalSummary.class);
+        assertEquals("alice", summary.pendingMemberId());
     }
 }

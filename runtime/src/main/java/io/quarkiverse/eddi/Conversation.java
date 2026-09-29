@@ -350,6 +350,24 @@ public class Conversation {
         cancelAsync().await().atMost(DEFAULT_TIMEOUT);
     }
 
+    // ─── Admin: state reset ───────────────────────
+
+    /**
+     * Reset a stuck conversation ({@code ERROR} or {@code EXECUTION_INTERRUPTED}) back
+     * to {@code READY} (reactive). Requires the {@code eddi-admin} role.
+     */
+    public Uni<Response> resetStateAsync() {
+        return agentClient.resetState(conversationId, ConversationState.READY.name());
+    }
+
+    /**
+     * Reset a stuck conversation back to {@code READY} (blocking, 30s timeout).
+     * Requires the {@code eddi-admin} role.
+     */
+    public void resetState() {
+        resetStateAsync().await().atMost(DEFAULT_TIMEOUT).close();
+    }
+
     // ─── HITL (Human-in-the-Loop) ─────────────────
 
     /**

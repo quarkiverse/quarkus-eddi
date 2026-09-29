@@ -178,4 +178,16 @@ public interface EddiAgentRestClient {
     @Produces(MediaType.APPLICATION_JSON)
     Uni<List<PendingApprovalSummary>> listPendingApprovals(
             @QueryParam("limit") @DefaultValue("200") Integer limit);
+
+    /**
+     * Reset a stuck conversation ({@code ERROR} or {@code EXECUTION_INTERRUPTED}) to
+     * {@code targetState} (default {@code READY}). Admin only; 409 if the current
+     * state cannot be reset.
+     */
+    @PATCH
+    @Path("/{conversationId}/state")
+    @Consumes(MediaType.APPLICATION_JSON)
+    Uni<Response> resetState(
+            @PathParam("conversationId") String conversationId,
+            @QueryParam("state") @DefaultValue("READY") String targetState);
 }

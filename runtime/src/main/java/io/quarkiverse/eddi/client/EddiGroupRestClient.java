@@ -11,6 +11,8 @@ import jakarta.ws.rs.sse.InboundSseEvent;
 import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import io.quarkiverse.eddi.model.GroupApprovalRequest;
 import io.quarkiverse.eddi.model.PendingApprovalSummary;
 import io.smallrye.mutiny.Multi;
@@ -88,6 +90,58 @@ public interface EddiGroupRestClient {
             @QueryParam("index") @DefaultValue("0") Integer index,
             @QueryParam("limit") @DefaultValue("20") Integer limit);
 
+    // --- Follow-up / continue / close (lifecycle: discuss → COMPLETED → [followup|continue]* → close) ---
+
+    /**
+     * Ask one member of a COMPLETED group conversation a follow-up question.
+     * Returns 200 with the updated group conversation.
+     */
+    @POST
+    @Path("/{groupId}/conversations/{groupConversationId}/followup")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<Response> followUpWithMember(
+            @PathParam("groupId") String groupId,
+            @PathParam("groupConversationId") String groupConversationId,
+            FollowUpRequest request);
+
+    /**
+     * Re-run all discussion phases of a COMPLETED group conversation with a new
+     * question (a new round). Attachments are rejected with 400 on a continuation.
+     */
+    @POST
+    @Path("/{groupId}/conversations/{groupConversationId}/continue")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<Response> continueDiscussion(
+            @PathParam("groupId") String groupId,
+            @PathParam("groupConversationId") String groupConversationId,
+            DiscussRequest request);
+
+    /**
+     * Continue a group discussion and stream progress via SSE ({@code round_start}
+     * followed by the same events as {@link #discussStreaming}).
+     */
+    @POST
+    @Path("/{groupId}/conversations/{groupConversationId}/continue/stream")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    Multi<InboundSseEvent> continueDiscussionStreaming(
+            @PathParam("groupId") String groupId,
+            @PathParam("groupConversationId") String groupConversationId,
+            DiscussRequest request);
+
+    /**
+     * Permanently close a group conversation (terminal CLOSED state); ends all
+     * member conversations.
+     */
+    @POST
+    @Path("/{groupId}/conversations/{groupConversationId}/close")
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<Response> closeGroupConversation(
+            @PathParam("groupId") String groupId,
+            @PathParam("groupConversationId") String groupConversationId);
+
     // --- Cancel ---
 
     /**
@@ -128,6 +182,20 @@ public interface EddiGroupRestClient {
             GroupApprovalRequest request);
 
     /**
+     * Submit a HUMAN group member's turn and resume an
+     * {@code AWAITING_HUMAN_INPUT} discussion from the next speaker. Only the
+     * pending member's own principal (or an admin) may submit.
+     */
+    @POST
+    @Path("/{groupId}/conversations/{groupConversationId}/human-input")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<Response> submitHumanInput(
+            @PathParam("groupId") String groupId,
+            @PathParam("groupConversationId") String groupConversationId,
+            HumanInputRequest request);
+
+    /**
      * Get the approval status of a group conversation. Use {@code detail=full} for
      * the complete conversation, {@code detail=summary} (the default) for the pause
      * coordinates only.
@@ -161,8 +229,44 @@ public interface EddiGroupRestClient {
             @QueryParam("limit") @DefaultValue("100") Integer limit);
 
     /**
-     * Request body for starting a group discussion.
+     * Request body for starting (or continuing) a group discussion. Optional
+     * {@code attachments} are shared with every member agent; they are only
+     * accepted when a discussion starts.
      */
-    record DiscussRequest(String question, String userId) {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record DiscussRequest(String question, String userId, List<AttachmentRef> attachments) {
+        public DiscussRequest(String question, String userId) {
+            this(question, userId, null);
+        }
+    }
+
+    /**
+     * An attachment on a group discussion: either inline base64 {@code data}
+     * (with {@code mimeType}) or a hosted {@code url}.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record AttachmentRef(String mimeType, String data, String url, String fileName) {
+
+        public static AttachmentRef inline(String mimeType, String base64Data, String fileName) {
+            return new AttachmentRef(mimeType, base64Data, null, fileName);
+        }
+
+        public static AttachmentRef url(String url) {
+            return new AttachmentRef(null, null, url, null);
+        }
+    }
+
+    /**
+     * Request body for a follow-up question. {@code targetAgentId} accepts an agent
+     * id or a member display name.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record FollowUpRequest(String question, String targetAgentId, String userId) {
+    }
+
+    /**
+     * Request body for a HUMAN member's turn: which member is speaking and what they said.
+     */
+    record HumanInputRequest(String memberId, String content) {
     }
 }

@@ -1,5 +1,7 @@
 package io.quarkiverse.eddi.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 /**
  * A typed context value for conversations.
  * <p>
@@ -14,7 +16,21 @@ package io.quarkiverse.eddi.model;
  * conv.sayWithContext("Hello", ctx);
  * }</pre>
  */
-public record Context(ContextType type, Object value) {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record Context(ContextType type, Object value, Boolean secret) {
+
+    public Context(ContextType type, Object value) {
+        this(type, value, null);
+    }
+
+    /**
+     * Create a secret string context value — e.g. the caller's token for a downstream
+     * API. EDDI can use it in templates and behavior rules for this turn only; it is
+     * never persisted, returned or audited.
+     */
+    public static Context secret(String value) {
+        return new Context(ContextType.string, value, true);
+    }
 
     /**
      * The type of context value.

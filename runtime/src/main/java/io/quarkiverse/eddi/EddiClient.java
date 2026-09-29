@@ -15,7 +15,10 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 import io.quarkiverse.eddi.client.*;
+import io.quarkiverse.eddi.client.EddiGroupRestClient.AttachmentRef;
 import io.quarkiverse.eddi.client.EddiGroupRestClient.DiscussRequest;
+import io.quarkiverse.eddi.client.EddiGroupRestClient.FollowUpRequest;
+import io.quarkiverse.eddi.client.EddiGroupRestClient.HumanInputRequest;
 import io.quarkiverse.eddi.config.EddiConfig;
 import io.quarkiverse.eddi.model.*;
 import io.smallrye.mutiny.Multi;
@@ -361,6 +364,7 @@ public class EddiClient {
     public class GroupBuilder {
         private final String groupId;
         private String userId;
+        private List<AttachmentRef> attachments;
 
         GroupBuilder(String groupId) {
             this.groupId = groupId;
@@ -372,10 +376,19 @@ public class EddiClient {
         }
 
         /**
+         * Attachments shared with every member agent when the discussion starts.
+         * Not accepted by {@code continueDiscussion}.
+         */
+        public GroupBuilder attachments(List<AttachmentRef> attachments) {
+            this.attachments = attachments;
+            return this;
+        }
+
+        /**
          * Start a group discussion (reactive).
          */
         public Uni<Response> discussAsync(String question) {
-            return groupClient.discuss(groupId, new DiscussRequest(question, userId));
+            return groupClient.discuss(groupId, new DiscussRequest(question, userId, attachments));
         }
 
         /**
@@ -389,8 +402,109 @@ public class EddiClient {
          * Start a group discussion and stream progress events (SSE).
          */
         public Multi<StreamToken> discussStreaming(String question) {
-            return groupClient.discussStreaming(groupId, new DiscussRequest(question, userId))
+            return groupClient.discussStreaming(groupId, new DiscussRequest(question, userId, attachments))
                     .map(EddiClient::toStreamToken);
+        }
+
+        // ─── Read / list / delete ─────────────────
+
+        /**
+         * Read a group conversation transcript (reactive).
+         */
+        public Uni<Map<String, Object>> readAsync(String groupConversationId) {
+            return groupClient.readGroupConversation(groupId, groupConversationId);
+        }
+
+        /**
+         * Read a group conversation transcript (blocking, 30s timeout).
+         */
+        public Map<String, Object> read(String groupConversationId) {
+            return readAsync(groupConversationId).await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        /**
+         * List this group's conversations (reactive).
+         */
+        public Uni<List<Map<String, Object>>> listAsync(int index, int limit) {
+            return groupClient.listGroupConversations(groupId, index, limit);
+        }
+
+        /**
+         * List this group's most recent conversations (blocking, 30s timeout).
+         */
+        public List<Map<String, Object>> list() {
+            return listAsync(0, 20).await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        /**
+         * Delete a group conversation and its member conversations (reactive).
+         */
+        public Uni<Response> deleteAsync(String groupConversationId) {
+            return groupClient.deleteGroupConversation(groupId, groupConversationId);
+        }
+
+        // ─── Follow-up / continue / close ─────────
+
+        /**
+         * Ask one member of a completed discussion a follow-up question (reactive).
+         *
+         * @param targetAgentId the member's agent id or display name
+         */
+        public Uni<Response> followUpAsync(String groupConversationId, String targetAgentId, String question) {
+            return groupClient.followUpWithMember(groupId, groupConversationId,
+                    new FollowUpRequest(question, targetAgentId, userId));
+        }
+
+        /**
+         * Ask one member of a completed discussion a follow-up question (blocking,
+         * 30s timeout).
+         */
+        public Response followUp(String groupConversationId, String targetAgentId, String question) {
+            return followUpAsync(groupConversationId, targetAgentId, question).await().atMost(DEFAULT_TIMEOUT);
+        }
+
+        /**
+         * Run another round of a completed discussion with a new question (reactive).
+         */
+        public Uni<Response> continueDiscussionAsync(String groupConversationId, String question) {
+            return groupClient.continueDiscussion(groupId, groupConversationId, new DiscussRequest(question, userId));
+        }
+
+        /**
+         * Run another round of a completed discussion and stream progress (SSE).
+         */
+        public Multi<StreamToken> continueDiscussionStreaming(String groupConversationId, String question) {
+            return groupClient.continueDiscussionStreaming(groupId, groupConversationId,
+                    new DiscussRequest(question, userId)).map(EddiClient::toStreamToken);
+        }
+
+        /**
+         * Permanently close a group conversation (reactive).
+         */
+        public Uni<Response> closeAsync(String groupConversationId) {
+            return groupClient.closeGroupConversation(groupId, groupConversationId);
+        }
+
+        /**
+         * Permanently close a group conversation (blocking, 30s timeout).
+         */
+        public void close(String groupConversationId) {
+            closeAsync(groupConversationId).await().atMost(DEFAULT_TIMEOUT).close();
+        }
+
+        /**
+         * Submit a HUMAN member's turn to a discussion awaiting human input (reactive).
+         */
+        public Uni<Response> submitHumanInputAsync(String groupConversationId, String memberId, String content) {
+            return groupClient.submitHumanInput(groupId, groupConversationId, new HumanInputRequest(memberId, content));
+        }
+
+        /**
+         * Submit a HUMAN member's turn to a discussion awaiting human input (blocking,
+         * 30s timeout).
+         */
+        public Response submitHumanInput(String groupConversationId, String memberId, String content) {
+            return submitHumanInputAsync(groupConversationId, memberId, content).await().atMost(DEFAULT_TIMEOUT);
         }
 
         // ─── Cancel ───────────────────────────────
@@ -603,6 +717,18 @@ public class EddiClient {
     public class LogOps {
 
         /**
+         * Live-tail log entries (SSE), optionally filtered. Each token's data is the
+         * JSON log entry. The stream stays open until cancelled.
+         *
+         * @param agentId filter by agent, or {@code null}
+         * @param conversationId filter by conversation, or {@code null}
+         * @param level minimum level, e.g. {@code INFO}
+         */
+        public Multi<StreamToken> stream(String agentId, String conversationId, String level) {
+            return logClient.streamLogs(agentId, conversationId, level).map(EddiClient::toStreamToken);
+        }
+
+        /**
          * Get recent logs with default filters (INFO level, limit 100).
          */
         public Uni<List<LogEntry>> recentAsync() {
@@ -653,6 +779,13 @@ public class EddiClient {
      * Coordinator administration operations.
      */
     public class CoordinatorOps {
+
+        /**
+         * Live-tail coordinator events (SSE). The stream stays open until cancelled.
+         */
+        public Multi<StreamToken> events() {
+            return coordinatorClient.streamEvents().map(EddiClient::toStreamToken);
+        }
 
         public Uni<CoordinatorStatus> statusAsync() {
             return coordinatorClient.getStatus();

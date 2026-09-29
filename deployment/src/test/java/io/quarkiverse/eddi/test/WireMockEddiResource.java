@@ -280,6 +280,17 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
                         .withHeader("Content-Type", "application/json")
                         .withBody("[]")));
 
+        // --- Group conversation lifecycle (followup / continue / close / human-input) ---
+        stubFor(post(urlPathMatching("/groups/group-1/conversations/gc-1/(followup|continue|close|human-input)"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\": \"gc-1\", \"state\": \"COMPLETED\"}")));
+
+        // --- Admin: conversation state reset ---
+        stubFor(patch(urlPathEqualTo("/agents/conv-wiremock-001/state"))
+                .willReturn(aResponse().withStatus(200)));
+
         // --- Error scenarios ---
         // Start conversation with non-existent agent → 404
         stubFor(post(urlPathEqualTo("/agents/non-existent-agent/start"))

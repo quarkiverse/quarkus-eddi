@@ -4,12 +4,14 @@ import java.util.List;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.sse.InboundSseEvent;
 
 import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
 import io.quarkiverse.eddi.model.CoordinatorStatus;
 import io.quarkiverse.eddi.model.DeadLetterEntry;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 
 /**
@@ -17,9 +19,6 @@ import io.smallrye.mutiny.Uni;
  * <p>
  * Maps to EDDI's {@code IRestCoordinatorAdmin} at
  * {@code /administration/coordinator}.
- * <p>
- * Note: The {@code /stream} SSE endpoint for live coordinator events is not
- * exposed here — use a dedicated SSE client if real-time monitoring is needed.
  */
 @RegisterRestClient(configKey = "eddi")
 @RegisterProvider(EddiApiKeyFilter.class)
@@ -65,4 +64,13 @@ public interface EddiCoordinatorRestClient {
     @Path("/dead-letters")
     @Produces(MediaType.APPLICATION_JSON)
     Uni<Integer> purgeDeadLetters();
+
+    /**
+     * Live-tail coordinator events via SSE (e.g. {@code task_completed},
+     * {@code task_failed}, {@code task_dead_lettered}).
+     */
+    @GET
+    @Path("/stream")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    Multi<InboundSseEvent> streamEvents();
 }
