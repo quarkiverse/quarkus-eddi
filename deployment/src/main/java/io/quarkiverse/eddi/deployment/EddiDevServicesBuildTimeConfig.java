@@ -1,20 +1,19 @@
 package io.quarkiverse.eddi.deployment;
 
+import io.quarkus.runtime.annotations.ConfigPhase;
+import io.quarkus.runtime.annotations.ConfigRoot;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
 /**
  * Build-time configuration for EDDI Dev Services.
  * <p>
- * <b>Note:</b> This interface is <i>not injected</i> into build steps. Quarkus does not
- * support {@code @ConfigMapping} injection in deployment build steps. The actual
- * config values are read via {@code ConfigProvider.getConfig()} in
- * {@link EddiDevServicesProcessor}. This interface serves as the canonical
- * documentation of the available properties and their defaults.
- *
- * @see EddiDevServicesProcessor
+ * Dev Services start an EDDI server plus MongoDB in dev and test mode unless
+ * disabled here or globally ({@code quarkus.devservices.enabled=false}), or unless
+ * {@code quarkus.eddi.url} / {@code quarkus.rest-client.eddi.url} is configured.
  */
 @ConfigMapping(prefix = "quarkus.eddi.devservices")
+@ConfigRoot(phase = ConfigPhase.BUILD_TIME)
 public interface EddiDevServicesBuildTimeConfig {
 
     /**
@@ -24,7 +23,7 @@ public interface EddiDevServicesBuildTimeConfig {
     boolean enabled();
 
     /**
-     * Docker image for the EDDI server.
+     * Docker image for the EDDI server. Keep aligned with the EDDI release this SDK targets.
      */
     @WithDefault("labsai/eddi:6.4.0")
     String image();
@@ -34,21 +33,4 @@ public interface EddiDevServicesBuildTimeConfig {
      */
     @WithDefault("mongo:7.0.14")
     String mongodbImage();
-
-    /**
-     * Whether the EDDI Dev Service containers are shared across Quarkus apps.
-     * <p>
-     * When shared, containers are reused across live reloads and multiple
-     * dev-mode applications using the same {@code serviceName}.
-     */
-    @WithDefault("true")
-    boolean shared();
-
-    /**
-     * Service name used to identify shared EDDI Dev Service containers.
-     * <p>
-     * Only applies when {@code shared=true}.
-     */
-    @WithDefault("eddi")
-    String serviceName();
 }

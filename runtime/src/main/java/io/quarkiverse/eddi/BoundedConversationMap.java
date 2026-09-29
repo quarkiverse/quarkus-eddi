@@ -2,6 +2,8 @@ package io.quarkiverse.eddi;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * A thread-safe, bounded map for managing per-user conversations in generated
@@ -17,6 +19,7 @@ import java.util.Map;
 public final class BoundedConversationMap {
 
     private final Map<String, Conversation> map;
+    private final ConcurrentHashMap<String, Object> creationLocks = new ConcurrentHashMap<>();
 
     /**
      * Create a bounded conversation map with the specified maximum capacity.
@@ -37,25 +40,50 @@ public final class BoundedConversationMap {
      * Get or create a conversation for the given user ID.
      * <p>
      * If a conversation already exists for this user, it is returned and its
-     * position is refreshed in the LRU order. If not, the supplier is called
-     * to create a new conversation, which is then stored and returned.
-     * <p>
-     * If the map is at capacity, the least recently used conversation is
-     * silently evicted.
+     * position is refreshed in the LRU order. Otherwise the supplier creates one,
+     * which is stored and returned. Creation is serialized per user only, so
+     * concurrent first requests of one user start a single conversation without
+     * blocking other users.
      *
      * @param userId the user identifier
      * @param conversationSupplier supplier to create a new conversation if needed
      * @return the existing or newly created conversation
      */
-    public synchronized Conversation getOrCreate(String userId,
-            java.util.function.Supplier<Conversation> conversationSupplier) {
-        Conversation existing = map.get(userId);
+    public Conversation getOrCreate(String userId, Supplier<Conversation> conversationSupplier) {
+        Conversation existing = get(userId);
         if (existing != null) {
             return existing;
         }
-        Conversation newConv = conversationSupplier.get();
-        map.put(userId, newConv);
-        return newConv;
+        Object lock = creationLocks.computeIfAbsent(userId, k -> new Object());
+        try {
+            synchronized (lock) {
+                existing = get(userId);
+                if (existing != null) {
+                    return existing;
+                }
+                Conversation created = conversationSupplier.get();
+                put(userId, created);
+                return created;
+            }
+        } finally {
+            creationLocks.remove(userId, lock);
+        }
+    }
+
+    /**
+     * The conversation of {@code userId} with {@code agentId}, starting one (with that
+     * userId) on first use. Called by generated {@code @EddiAgent} endpoints.
+     *
+     * @param environment deployment environment, or empty for the configured default
+     */
+    public Conversation conversationFor(String userId, EddiClient eddiClient, String agentId, String environment) {
+        return getOrCreate(userId, () -> {
+            EddiClient.AgentBuilder agent = eddiClient.agent(agentId).userId(userId);
+            if (environment != null && !environment.isEmpty()) {
+                agent = agent.environment(environment);
+            }
+            return agent.startConversation();
+        });
     }
 
     /**

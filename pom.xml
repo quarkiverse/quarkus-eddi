@@ -55,8 +55,8 @@
 
     <properties>
         <quarkus.version>3.39.5</quarkus.version>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <!-- quarkiverse-parent sets release=17, which overrides source/target -->
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 

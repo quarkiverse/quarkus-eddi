@@ -1,10 +1,10 @@
 package io.quarkiverse.eddi;
 
-import static io.quarkiverse.eddi.EddiDefaults.DEFAULT_TIMEOUT;
-
 import java.net.URI;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -156,6 +156,13 @@ public class EddiClient {
     // ─── Agent builder ────────────────────────────
 
     /**
+     * Timeout of the blocking convenience methods ({@code quarkus.eddi.timeout}).
+     */
+    Duration timeout() {
+        return config.timeout();
+    }
+
+    /**
      * Start building an interaction with a specific agent.
      */
     public AgentBuilder agent(String agentId) {
@@ -300,10 +307,10 @@ public class EddiClient {
         }
 
         /**
-         * Start a new conversation (blocking, 30s timeout).
+         * Start a new conversation (blocking, up to quarkus.eddi.timeout).
          */
         public Conversation startConversation() {
-            return startConversationAsync().await().atMost(DEFAULT_TIMEOUT);
+            return startConversationAsync().await().atMost(timeout());
         }
 
         /**
@@ -322,7 +329,7 @@ public class EddiClient {
             return startUni.map(response -> {
                 String location = response.getHeaderString("Location");
                 String conversationId = extractIdFromUri(location);
-                return new Conversation(conversationId, agentId, agentClient, streamingClient);
+                return new Conversation(conversationId, agentId, agentClient, streamingClient, timeout());
             });
         }
 
@@ -330,7 +337,7 @@ public class EddiClient {
          * Resume an existing conversation.
          */
         public Conversation conversation(String conversationId) {
-            return new Conversation(conversationId, agentId, agentClient, streamingClient);
+            return new Conversation(conversationId, agentId, agentClient, streamingClient, timeout());
         }
     }
 
@@ -354,7 +361,8 @@ public class EddiClient {
          * Build the managed conversation wrapper.
          */
         public ManagedConversation build() {
-            return new ManagedConversation(intent, userId, managedClient);
+            Objects.requireNonNull(userId, "managed conversations need a userId: call userId(...) before build()");
+            return new ManagedConversation(intent, userId, managedClient, timeout());
         }
     }
 
@@ -392,10 +400,10 @@ public class EddiClient {
         }
 
         /**
-         * Start a group discussion (blocking, 30s timeout).
+         * Start a group discussion (blocking, up to quarkus.eddi.timeout).
          */
         public Response discuss(String question) {
-            return discussAsync(question).await().atMost(DEFAULT_TIMEOUT);
+            return discussAsync(question).await().atMost(timeout());
         }
 
         /**
@@ -403,7 +411,7 @@ public class EddiClient {
          */
         public Multi<StreamToken> discussStreaming(String question) {
             return groupClient.discussStreaming(groupId, new DiscussRequest(question, userId, attachments))
-                    .map(EddiClient::toStreamToken);
+                    .filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
         }
 
         // ─── Read / list / delete ─────────────────
@@ -416,10 +424,10 @@ public class EddiClient {
         }
 
         /**
-         * Read a group conversation transcript (blocking, 30s timeout).
+         * Read a group conversation transcript (blocking, up to quarkus.eddi.timeout).
          */
         public Map<String, Object> read(String groupConversationId) {
-            return readAsync(groupConversationId).await().atMost(DEFAULT_TIMEOUT);
+            return readAsync(groupConversationId).await().atMost(timeout());
         }
 
         /**
@@ -430,10 +438,10 @@ public class EddiClient {
         }
 
         /**
-         * List this group's most recent conversations (blocking, 30s timeout).
+         * List this group's most recent conversations (blocking, up to quarkus.eddi.timeout).
          */
         public List<Map<String, Object>> list() {
-            return listAsync(0, 20).await().atMost(DEFAULT_TIMEOUT);
+            return listAsync(0, 20).await().atMost(timeout());
         }
 
         /**
@@ -457,10 +465,10 @@ public class EddiClient {
 
         /**
          * Ask one member of a completed discussion a follow-up question (blocking,
-         * 30s timeout).
+         * up to quarkus.eddi.timeout).
          */
         public Response followUp(String groupConversationId, String targetAgentId, String question) {
-            return followUpAsync(groupConversationId, targetAgentId, question).await().atMost(DEFAULT_TIMEOUT);
+            return followUpAsync(groupConversationId, targetAgentId, question).await().atMost(timeout());
         }
 
         /**
@@ -475,7 +483,7 @@ public class EddiClient {
          */
         public Multi<StreamToken> continueDiscussionStreaming(String groupConversationId, String question) {
             return groupClient.continueDiscussionStreaming(groupId, groupConversationId,
-                    new DiscussRequest(question, userId)).map(EddiClient::toStreamToken);
+                    new DiscussRequest(question, userId)).filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
         }
 
         /**
@@ -486,10 +494,10 @@ public class EddiClient {
         }
 
         /**
-         * Permanently close a group conversation (blocking, 30s timeout).
+         * Permanently close a group conversation (blocking, up to quarkus.eddi.timeout).
          */
         public void close(String groupConversationId) {
-            closeAsync(groupConversationId).await().atMost(DEFAULT_TIMEOUT).close();
+            closeAsync(groupConversationId).await().atMost(timeout()).close();
         }
 
         /**
@@ -501,10 +509,10 @@ public class EddiClient {
 
         /**
          * Submit a HUMAN member's turn to a discussion awaiting human input (blocking,
-         * 30s timeout).
+         * up to quarkus.eddi.timeout).
          */
         public Response submitHumanInput(String groupConversationId, String memberId, String content) {
-            return submitHumanInputAsync(groupConversationId, memberId, content).await().atMost(DEFAULT_TIMEOUT);
+            return submitHumanInputAsync(groupConversationId, memberId, content).await().atMost(timeout());
         }
 
         // ─── Cancel ───────────────────────────────
@@ -514,7 +522,7 @@ public class EddiClient {
         }
 
         public void cancel(String groupConversationId) {
-            cancelAsync(groupConversationId).await().atMost(DEFAULT_TIMEOUT).close();
+            cancelAsync(groupConversationId).await().atMost(timeout()).close();
         }
 
         // ─── HITL approvals ───────────────────────
@@ -527,10 +535,10 @@ public class EddiClient {
         }
 
         /**
-         * Approve/resume a paused group discussion (blocking, 30s timeout).
+         * Approve/resume a paused group discussion (blocking, up to quarkus.eddi.timeout).
          */
         public Response approve(String groupConversationId, HitlDecision decision) {
-            return approveAsync(groupConversationId, decision).await().atMost(DEFAULT_TIMEOUT);
+            return approveAsync(groupConversationId, decision).await().atMost(timeout());
         }
 
         /**
@@ -553,7 +561,7 @@ public class EddiClient {
          */
         public Multi<StreamToken> approveStreaming(String groupConversationId, HitlDecision decision) {
             return groupClient.approveGroupPhaseStreaming(groupId, groupConversationId,
-                    GroupApprovalRequest.of(decision)).map(EddiClient::toStreamToken);
+                    GroupApprovalRequest.of(decision)).filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
         }
 
         /**
@@ -564,10 +572,10 @@ public class EddiClient {
         }
 
         /**
-         * Read a group conversation's approval status summary (blocking, 30s timeout).
+         * Read a group conversation's approval status summary (blocking, up to quarkus.eddi.timeout).
          */
         public Response approvalStatus(String groupConversationId) {
-            return approvalStatusAsync(groupConversationId, "summary").await().atMost(DEFAULT_TIMEOUT);
+            return approvalStatusAsync(groupConversationId, "summary").await().atMost(timeout());
         }
 
         /**
@@ -578,11 +586,11 @@ public class EddiClient {
         }
 
         /**
-         * List this group's conversations awaiting human approval (blocking, 30s
+         * List this group's conversations awaiting human approval (blocking, up to quarkus.eddi.timeout
          * timeout).
          */
         public List<PendingApprovalSummary> pendingApprovals() {
-            return pendingApprovalsAsync(100).await().atMost(DEFAULT_TIMEOUT);
+            return pendingApprovalsAsync(100).await().atMost(timeout());
         }
     }
 
@@ -611,10 +619,10 @@ public class EddiClient {
         }
 
         /**
-         * Execute the setup and return the result (blocking, 30s timeout).
+         * Execute the setup and return the result (blocking, up to quarkus.eddi.timeout).
          */
         public SetupResult create() {
-            return createAsync().await().atMost(DEFAULT_TIMEOUT);
+            return createAsync().await().atMost(timeout());
         }
     }
 
@@ -639,10 +647,10 @@ public class EddiClient {
         }
 
         /**
-         * Execute the API agent setup and return the result (blocking, 30s timeout).
+         * Execute the API agent setup and return the result (blocking, up to quarkus.eddi.timeout).
          */
         public SetupResult create() {
-            return createAsync().await().atMost(DEFAULT_TIMEOUT);
+            return createAsync().await().atMost(timeout());
         }
     }
 
@@ -664,11 +672,11 @@ public class EddiClient {
         }
 
         public void deploy(String agentId, int version) {
-            deployAsync(agentId, version).await().atMost(DEFAULT_TIMEOUT);
+            deployAsync(agentId, version).await().atMost(timeout());
         }
 
         public void deploy(String agentId, int version, String environment) {
-            deployAsync(agentId, version, environment).await().atMost(DEFAULT_TIMEOUT);
+            deployAsync(agentId, version, environment).await().atMost(timeout());
         }
 
         /**
@@ -687,11 +695,11 @@ public class EddiClient {
         }
 
         public void undeploy(String agentId, int version) {
-            undeployAsync(agentId, version).await().atMost(DEFAULT_TIMEOUT);
+            undeployAsync(agentId, version).await().atMost(timeout());
         }
 
         public void undeploy(String agentId, int version, String environment) {
-            undeployAsync(agentId, version, environment).await().atMost(DEFAULT_TIMEOUT);
+            undeployAsync(agentId, version, environment).await().atMost(timeout());
         }
 
         public Uni<List<AgentDeploymentStatus>> listDeployedAsync() {
@@ -703,11 +711,11 @@ public class EddiClient {
         }
 
         public List<AgentDeploymentStatus> listDeployed() {
-            return listDeployedAsync().await().atMost(DEFAULT_TIMEOUT);
+            return listDeployedAsync().await().atMost(timeout());
         }
 
         public List<AgentDeploymentStatus> listDeployed(String environment) {
-            return listDeployedAsync(environment).await().atMost(DEFAULT_TIMEOUT);
+            return listDeployedAsync(environment).await().atMost(timeout());
         }
     }
 
@@ -725,7 +733,8 @@ public class EddiClient {
          * @param level minimum level, e.g. {@code INFO}
          */
         public Multi<StreamToken> stream(String agentId, String conversationId, String level) {
-            return logClient.streamLogs(agentId, conversationId, level).map(EddiClient::toStreamToken);
+            return logClient.streamLogs(agentId, conversationId, level).filter(EddiClient::isEvent)
+                    .map(EddiClient::toStreamToken);
         }
 
         /**
@@ -743,7 +752,7 @@ public class EddiClient {
         }
 
         public List<LogEntry> recent() {
-            return recentAsync().await().atMost(DEFAULT_TIMEOUT);
+            return recentAsync().await().atMost(timeout());
         }
 
         /**
@@ -764,10 +773,10 @@ public class EddiClient {
         }
 
         /**
-         * Get historical logs for a specific agent (blocking, 30s timeout).
+         * Get historical logs for a specific agent (blocking, up to quarkus.eddi.timeout).
          */
         public List<LogEntry> history(String agentId) {
-            return historyAsync(agentId).await().atMost(DEFAULT_TIMEOUT);
+            return historyAsync(agentId).await().atMost(timeout());
         }
 
         public Uni<Map<String, String>> instanceIdAsync() {
@@ -784,7 +793,7 @@ public class EddiClient {
          * Live-tail coordinator events (SSE). The stream stays open until cancelled.
          */
         public Multi<StreamToken> events() {
-            return coordinatorClient.streamEvents().map(EddiClient::toStreamToken);
+            return coordinatorClient.streamEvents().filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
         }
 
         public Uni<CoordinatorStatus> statusAsync() {
@@ -792,7 +801,7 @@ public class EddiClient {
         }
 
         public CoordinatorStatus status() {
-            return statusAsync().await().atMost(DEFAULT_TIMEOUT);
+            return statusAsync().await().atMost(timeout());
         }
 
         public Uni<List<DeadLetterEntry>> deadLettersAsync() {
@@ -800,7 +809,7 @@ public class EddiClient {
         }
 
         public List<DeadLetterEntry> deadLetters() {
-            return deadLettersAsync().await().atMost(DEFAULT_TIMEOUT);
+            return deadLettersAsync().await().atMost(timeout());
         }
 
         public Uni<Void> replayAsync(String entryId) {
@@ -835,11 +844,11 @@ public class EddiClient {
         }
 
         public List<PendingApprovalSummary> pending() {
-            return pendingAsync().await().atMost(DEFAULT_TIMEOUT);
+            return pendingAsync().await().atMost(timeout());
         }
 
         public List<PendingApprovalSummary> pending(int limit) {
-            return pendingAsync(limit).await().atMost(DEFAULT_TIMEOUT);
+            return pendingAsync(limit).await().atMost(timeout());
         }
 
         /**
@@ -855,11 +864,11 @@ public class EddiClient {
         }
 
         public List<PendingApprovalSummary> pendingGroups() {
-            return pendingGroupsAsync().await().atMost(DEFAULT_TIMEOUT);
+            return pendingGroupsAsync().await().atMost(timeout());
         }
 
         public List<PendingApprovalSummary> pendingGroups(int limit) {
-            return pendingGroupsAsync(limit).await().atMost(DEFAULT_TIMEOUT);
+            return pendingGroupsAsync(limit).await().atMost(timeout());
         }
     }
 
@@ -871,6 +880,14 @@ public class EddiClient {
      * Map a raw SSE event to a {@link StreamToken}, preserving the server's event
      * name (defaulting to {@code token} for unnamed events).
      */
+    /**
+     * Drop comment-only frames such as EDDI's {@code : heartbeat} keep-alives, which
+     * carry neither an event name nor data.
+     */
+    static boolean isEvent(SseEvent<String> sseEvent) {
+        return sseEvent.name() != null || (sseEvent.data() != null && !sseEvent.data().isEmpty());
+    }
+
     static StreamToken toStreamToken(SseEvent<String> sseEvent) {
         String eventName = sseEvent.name();
         String data = sseEvent.data();

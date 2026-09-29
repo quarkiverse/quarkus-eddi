@@ -64,6 +64,11 @@ class EddiRealServerIT {
                     "quarkus.eddi.url", EDDI_URL,
                     "quarkus.eddi.devservices.enabled", "false");
         }
+
+        @Override
+        public boolean disableGlobalTestResources() {
+            return true;
+        }
     }
 
     @BeforeAll

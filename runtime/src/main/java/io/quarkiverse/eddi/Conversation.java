@@ -1,7 +1,6 @@
 package io.quarkiverse.eddi;
 
-import static io.quarkiverse.eddi.EddiDefaults.DEFAULT_TIMEOUT;
-
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -54,6 +53,7 @@ public class Conversation {
     private final String agentId;
     private final EddiAgentRestClient agentClient;
     private final EddiStreamingRestClient streamingClient;
+    private final Duration timeout;
 
     /**
      * Package-private constructor — conversations should be created via
@@ -61,6 +61,12 @@ public class Conversation {
      */
     Conversation(String conversationId, String agentId,
             EddiAgentRestClient agentClient, EddiStreamingRestClient streamingClient) {
+        this(conversationId, agentId, agentClient, streamingClient, EddiDefaults.DEFAULT_TIMEOUT);
+    }
+
+    Conversation(String conversationId, String agentId, EddiAgentRestClient agentClient,
+            EddiStreamingRestClient streamingClient, Duration timeout) {
+        this.timeout = timeout;
         this.conversationId = conversationId;
         this.agentId = agentId;
         this.agentClient = agentClient;
@@ -107,17 +113,17 @@ public class Conversation {
     // ─── Say (blocking convenience) ───────────────
 
     /**
-     * Send a text message (blocking, 30s timeout).
+     * Send a text message (blocking, up to quarkus.eddi.timeout).
      */
     public ConversationResult say(String message) {
-        return sayAsync(message).await().atMost(DEFAULT_TIMEOUT);
+        return sayAsync(message).await().atMost(timeout);
     }
 
     /**
-     * Send a message with context (blocking, 30s timeout).
+     * Send a message with context (blocking, up to quarkus.eddi.timeout).
      */
     public ConversationResult sayWithContext(String message, Map<String, Context> context) {
-        return sayWithContextAsync(message, context).await().atMost(DEFAULT_TIMEOUT);
+        return sayWithContextAsync(message, context).await().atMost(timeout);
     }
 
     // ─── Streaming ────────────────────────────────
@@ -142,7 +148,7 @@ public class Conversation {
     public Multi<StreamToken> sayStreaming(InputData inputData) {
         return streamingClient.sayStreaming(conversationId, false, true, null, inputData)
                 // Unnamed events default to "token"
-                .map(EddiClient::toStreamToken);
+                .filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
     }
 
     /**
@@ -218,10 +224,10 @@ public class Conversation {
     }
 
     /**
-     * Rerun the last conversation step (blocking, 30s timeout).
+     * Rerun the last conversation step (blocking, up to quarkus.eddi.timeout).
      */
     public ConversationResult rerun() {
-        return rerunAsync().await().atMost(DEFAULT_TIMEOUT);
+        return rerunAsync().await().atMost(timeout);
     }
 
     // ─── State ────────────────────────────────────
@@ -234,10 +240,10 @@ public class Conversation {
     }
 
     /**
-     * Get the current conversation lifecycle state (blocking, 30s timeout).
+     * Get the current conversation lifecycle state (blocking, up to quarkus.eddi.timeout).
      */
     public ConversationState state() {
-        return stateAsync().await().atMost(DEFAULT_TIMEOUT);
+        return stateAsync().await().atMost(timeout);
     }
 
     // ─── Read ─────────────────────────────────────
@@ -287,17 +293,17 @@ public class Conversation {
     }
 
     /**
-     * Undo (blocking, 30s timeout).
+     * Undo (blocking, up to quarkus.eddi.timeout).
      */
     public void undo() {
-        undoAsync().await().atMost(DEFAULT_TIMEOUT);
+        undoAsync().await().atMost(timeout);
     }
 
     /**
-     * Redo (blocking, 30s timeout).
+     * Redo (blocking, up to quarkus.eddi.timeout).
      */
     public void redo() {
-        redoAsync().await().atMost(DEFAULT_TIMEOUT);
+        redoAsync().await().atMost(timeout);
     }
 
     // ─── End ──────────────────────────────────────
@@ -310,10 +316,10 @@ public class Conversation {
     }
 
     /**
-     * End this conversation (blocking, 30s timeout).
+     * End this conversation (blocking, up to quarkus.eddi.timeout).
      */
     public void end() {
-        endAsync().await().atMost(DEFAULT_TIMEOUT);
+        endAsync().await().atMost(timeout);
     }
 
     /**
@@ -339,10 +345,10 @@ public class Conversation {
     }
 
     /**
-     * Cancel this conversation (blocking, 30s timeout).
+     * Cancel this conversation (blocking, up to quarkus.eddi.timeout).
      */
     public void cancel() {
-        cancelAsync().await().atMost(DEFAULT_TIMEOUT).close();
+        cancelAsync().await().atMost(timeout).close();
     }
 
     // ─── Admin: state reset ───────────────────────
@@ -356,11 +362,11 @@ public class Conversation {
     }
 
     /**
-     * Reset a stuck conversation back to {@code READY} (blocking, 30s timeout).
+     * Reset a stuck conversation back to {@code READY} (blocking, up to quarkus.eddi.timeout).
      * Requires the {@code eddi-admin} role.
      */
     public void resetState() {
-        resetStateAsync().await().atMost(DEFAULT_TIMEOUT).close();
+        resetStateAsync().await().atMost(timeout).close();
     }
 
     // ─── HITL (Human-in-the-Loop) ─────────────────
@@ -375,10 +381,10 @@ public class Conversation {
 
     /**
      * Whether this conversation is currently paused awaiting a human approval
-     * decision (blocking, 30s timeout).
+     * decision (blocking, up to quarkus.eddi.timeout).
      */
     public boolean isAwaitingHuman() {
-        return isAwaitingHumanAsync().await().atMost(DEFAULT_TIMEOUT);
+        return isAwaitingHumanAsync().await().atMost(timeout);
     }
 
     /**
@@ -391,10 +397,10 @@ public class Conversation {
     }
 
     /**
-     * Submit a human decision to resume this conversation (blocking, 30s timeout).
+     * Submit a human decision to resume this conversation (blocking, up to quarkus.eddi.timeout).
      */
     public Response resume(HitlDecision decision) {
-        return resumeAsync(decision).await().atMost(DEFAULT_TIMEOUT);
+        return resumeAsync(decision).await().atMost(timeout);
     }
 
     /**
@@ -406,10 +412,10 @@ public class Conversation {
     }
 
     /**
-     * Approve and resume this paused conversation (blocking, 30s timeout).
+     * Approve and resume this paused conversation (blocking, up to quarkus.eddi.timeout).
      */
     public Response approve(String note) {
-        return approveAsync(note).await().atMost(DEFAULT_TIMEOUT);
+        return approveAsync(note).await().atMost(timeout);
     }
 
     /**
@@ -421,10 +427,10 @@ public class Conversation {
     }
 
     /**
-     * Reject and resume this paused conversation (blocking, 30s timeout).
+     * Reject and resume this paused conversation (blocking, up to quarkus.eddi.timeout).
      */
     public Response reject(String note) {
-        return rejectAsync(note).await().atMost(DEFAULT_TIMEOUT);
+        return rejectAsync(note).await().atMost(timeout);
     }
 
     /**
@@ -438,11 +444,11 @@ public class Conversation {
     }
 
     /**
-     * Read the HITL approval status summary of this conversation (blocking, 30s
+     * Read the HITL approval status summary of this conversation (blocking, up to quarkus.eddi.timeout
      * timeout).
      */
     public Response approvalStatus() {
-        return approvalStatusAsync("summary").await().atMost(DEFAULT_TIMEOUT);
+        return approvalStatusAsync("summary").await().atMost(timeout);
     }
 
     // ─── Snapshot parsing ─────────────────────────

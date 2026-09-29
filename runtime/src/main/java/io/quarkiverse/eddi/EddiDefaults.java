@@ -11,12 +11,13 @@ public final class EddiDefaults {
     }
 
     /**
-     * Default timeout for blocking operations (30 seconds).
+     * Default timeout for blocking operations (5 minutes); the configured value is
+     * {@code quarkus.eddi.timeout}.
      * <p>
      * Used by {@link EddiClient}, {@link Conversation}, and
      * {@link ManagedConversation} for {@code .await().atMost()} calls.
      */
-    public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    public static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(5);
 
     /**
      * Maximum number of per-user conversations retained by generated

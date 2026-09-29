@@ -61,6 +61,11 @@ class EddiApiKeyFilterTest {
             }
 
             @Override
+            public java.time.Duration timeout() {
+                return java.time.Duration.ofMinutes(5);
+            }
+
+            @Override
             public String environment() {
                 return "production";
             }

@@ -57,11 +57,9 @@ public class EddiAgentAnnotationProcessor {
             ClassInfo classInfo = annotation.target().asClass();
             String agentId = annotation.value("id").asString();
             String pathValue = annotation.value("path").asString();
-            boolean streaming = annotation.value("streaming") != null
-                    && annotation.value("streaming").asBoolean();
-            String environment = annotation.value("environment") != null
-                    ? annotation.value("environment").asString()
-                    : "";
+            // valueWithDefault: annotation.value(...) is null for defaulted members
+            boolean streaming = annotation.valueWithDefault(index, "streaming").asBoolean();
+            String environment = annotation.valueWithDefault(index, "environment").asString();
 
             String className = classInfo.name().toString();
             String generatedName = className + "_EddiResource";
@@ -325,8 +323,8 @@ public class EddiAgentAnnotationProcessor {
     }
 
     /**
-     * Generate bytecode to get or create a conversation from the {@link BoundedConversationMap}.
-     * Uses the map's built-in LRU eviction — no manual size checking needed.
+     * Generate bytecode for {@code conversations.conversationFor(userId, eddiClient, agentId, environment)}:
+     * the user's conversation, started with that userId on first use.
      */
     private ResultHandle getOrCreateConversation(MethodCreator method, ClassCreator creator,
             String agentId, String environment, ResultHandle userId) {
@@ -334,48 +332,14 @@ public class EddiAgentAnnotationProcessor {
         ResultHandle conversations = method.readInstanceField(
                 FieldDescriptor.of(creator.getClassName(), "conversations", BoundedConversationMap.class),
                 method.getThis());
-
-        // Try to get existing conversation
-        ResultHandle existing = method.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(BoundedConversationMap.class, "get", Conversation.class, String.class),
-                conversations, userId);
-
-        AssignableResultHandle conv = method.createVariable(Conversation.class);
-
-        BranchResult branch = method.ifNull(existing);
-        BytecodeCreator trueBranch = branch.trueBranch();
-        BytecodeCreator falseBranch = branch.falseBranch();
-
-        // True branch: create new conversation and store in bounded map
-        ResultHandle eddiClient = trueBranch.readInstanceField(
+        ResultHandle eddiClient = method.readInstanceField(
                 FieldDescriptor.of(creator.getClassName(), "eddiClient", EddiClient.class),
-                trueBranch.getThis());
-        ResultHandle agentBuilder = trueBranch.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(EddiClient.class, "agent", EddiClient.AgentBuilder.class, String.class),
-                eddiClient, trueBranch.load(agentId));
-        if (environment != null && !environment.isEmpty()) {
-            agentBuilder = trueBranch.invokeVirtualMethod(
-                    MethodDescriptor.ofMethod(EddiClient.AgentBuilder.class, "environment",
-                            EddiClient.AgentBuilder.class, String.class),
-                    agentBuilder, trueBranch.load(environment));
-        }
-        ResultHandle newConv = trueBranch.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(EddiClient.AgentBuilder.class, "startConversation", Conversation.class),
-                agentBuilder);
+                method.getThis());
 
-        // Store in bounded map (LRU eviction happens automatically)
-        ResultHandle conversationsTrue = trueBranch.readInstanceField(
-                FieldDescriptor.of(creator.getClassName(), "conversations", BoundedConversationMap.class),
-                trueBranch.getThis());
-        trueBranch.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(BoundedConversationMap.class, "put", void.class, String.class,
-                        Conversation.class),
-                conversationsTrue, userId, newConv);
-        trueBranch.assign(conv, newConv);
-
-        // False branch: reuse existing conversation
-        falseBranch.assign(conv, falseBranch.checkCast(existing, Conversation.class));
-
-        return conv;
+        return method.invokeVirtualMethod(
+                MethodDescriptor.ofMethod(BoundedConversationMap.class, "conversationFor", Conversation.class,
+                        String.class, EddiClient.class, String.class, String.class),
+                conversations, userId, eddiClient, method.load(agentId),
+                method.load(environment == null ? "" : environment));
     }
 }

@@ -10,8 +10,11 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
+import io.quarkiverse.eddi.Conversation;
 import io.quarkiverse.eddi.EddiClient;
+import io.quarkiverse.eddi.model.ConversationState;
 import io.quarkiverse.eddi.model.CoordinatorStatus;
+import io.quarkiverse.eddi.model.SetupResult;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
@@ -37,6 +40,12 @@ class EddiDevServicesIT {
         public String getConfigProfile() {
             return "devservices-it";
         }
+
+        /** The WireMock test resource is global; it must not override the Dev Services URL. */
+        @Override
+        public boolean disableGlobalTestResources() {
+            return true;
+        }
     }
 
     @Inject
@@ -47,8 +56,12 @@ class EddiDevServicesIT {
 
     @Test
     void devServicesStartedEddiContainer() {
-        assertFalse(eddiUrl.contains(":7070") && eddiUrl.contains("localhost"),
-                "quarkus.eddi.url should point at the Dev Services container, was " + eddiUrl);
+        assertFalse(eddiUrl.endsWith(":7070"), "should point at the container's mapped port, was " + eddiUrl);
+        // Only a real EDDI answers this (WireMock has no stub for it)
+        String instanceId = eddi.logs().instanceIdAsync().await().atMost(java.time.Duration.ofSeconds(30))
+                .get("instanceId");
+        assertNotNull(instanceId);
+        assertFalse(instanceId.isBlank());
     }
 
     @Test
@@ -67,5 +80,41 @@ class EddiDevServicesIT {
         assertNotNull(status.coordinatorType());
         assertNotNull(eddi.logs().recent());
         assertNotNull(eddi.approvals().pending());
+    }
+
+    @Test
+    void setupAgentAndRunConversationLifecycle() {
+        // No LLM call happens until a message is sent, so a placeholder key is fine.
+        SetupResult setup = eddi.setup()
+                .agentName("SDK IT Agent")
+                .systemPrompt("You are a test agent.")
+                .provider("openai").model("gpt-4o-mini").apiKey("sk-placeholder")
+                .deploy(true)
+                .create();
+        assertNotNull(setup.agentId());
+        assertTrue(Boolean.TRUE.equals(setup.deployed()), "deployed: " + setup);
+
+        Conversation conv = eddi.agent(setup.agentId()).userId("it-user").startConversation();
+        assertNotNull(conv.id());
+        assertEquals(ConversationState.READY, conv.state());
+
+        // Real SSE framing: the placeholder key makes the LLM task fail, but the
+        // stream still carries lifecycle events and ends with done or error.
+        java.util.List<io.quarkiverse.eddi.model.StreamToken> events = conv.sayStreaming("Hello")
+                .collect().asList()
+                .onFailure().recoverWithItem(java.util.List.of())
+                .await().atMost(java.time.Duration.ofMinutes(2));
+        assertTrue(events.stream().anyMatch(e -> e.isTaskStart()), "expected task_start: " + events);
+        var last = events.get(events.size() - 1);
+        assertTrue(last.isDone() || last.isError(), "expected terminal event: " + events);
+
+        // A failed turn leaves the conversation in ERROR; the admin reset brings it back.
+        if (conv.state() == ConversationState.ERROR) {
+            conv.resetState();
+            assertEquals(ConversationState.READY, conv.state());
+        }
+
+        conv.end();
+        assertEquals(ConversationState.ENDED, conv.state());
     }
 }

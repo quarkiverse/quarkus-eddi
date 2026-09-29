@@ -1,7 +1,5 @@
 package io.quarkiverse.eddi;
 
-import static io.quarkiverse.eddi.EddiDefaults.DEFAULT_TIMEOUT;
-
 import jakarta.ws.rs.core.Response;
 
 import io.quarkiverse.eddi.client.EddiManagedRestClient;
@@ -27,12 +25,19 @@ public class ManagedConversation {
     private final String intent;
     private final String userId;
     private final EddiManagedRestClient managedClient;
+    private final java.time.Duration timeout;
 
     /**
      * Package-private constructor — managed conversations should be created via
      * {@link EddiClient.ManagedAgentBuilder#build()}.
      */
     ManagedConversation(String intent, String userId, EddiManagedRestClient managedClient) {
+        this(intent, userId, managedClient, EddiDefaults.DEFAULT_TIMEOUT);
+    }
+
+    ManagedConversation(String intent, String userId, EddiManagedRestClient managedClient,
+            java.time.Duration timeout) {
+        this.timeout = timeout;
         this.intent = intent;
         this.userId = userId;
         this.managedClient = managedClient;
@@ -66,10 +71,10 @@ public class ManagedConversation {
     // ─── Say (blocking) ───────────────────────────
 
     /**
-     * Send a text message (blocking, 30s timeout).
+     * Send a text message (blocking, up to quarkus.eddi.timeout).
      */
     public ConversationResult say(String message) {
-        return sayAsync(message).await().atMost(DEFAULT_TIMEOUT);
+        return sayAsync(message).await().atMost(timeout);
     }
 
     // ─── Load ─────────────────────────────────────
@@ -83,10 +88,10 @@ public class ManagedConversation {
     }
 
     /**
-     * Load the current conversation memory (blocking, 30s timeout).
+     * Load the current conversation memory (blocking, up to quarkus.eddi.timeout).
      */
     public ConversationResult load() {
-        return loadAsync().await().atMost(DEFAULT_TIMEOUT);
+        return loadAsync().await().atMost(timeout);
     }
 
     // ─── Undo / Redo ──────────────────────────────
@@ -117,9 +122,9 @@ public class ManagedConversation {
     }
 
     /**
-     * End the current conversation (blocking, 30s timeout).
+     * End the current conversation (blocking, up to quarkus.eddi.timeout).
      */
     public void end() {
-        endAsync().await().atMost(DEFAULT_TIMEOUT);
+        endAsync().await().atMost(timeout);
     }
 }
