@@ -4,7 +4,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
@@ -12,10 +11,14 @@ import java.util.List;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+
+import com.github.tomakehurst.wiremock.client.WireMock;
 
 import io.quarkiverse.eddi.Conversation;
 import io.quarkiverse.eddi.EddiClient;
@@ -39,6 +42,21 @@ class EddiHitlTest {
 
     @Inject
     EddiClient eddi;
+
+    /**
+     * The test resource starts WireMock in a different classloader, so the static
+     * {@code WireMock.configureFor(...)} it calls is not visible here. Bind an
+     * explicit client to the resource's port instead of the default localhost:8080.
+     */
+    @ConfigProperty(name = "wiremock.port")
+    int wireMockPort;
+
+    WireMock wireMock;
+
+    @BeforeEach
+    void bindWireMockClient() {
+        wireMock = new WireMock(wireMockPort);
+    }
 
     @Test
     @Order(1)
@@ -75,7 +93,7 @@ class EddiHitlTest {
         }
         // Prove the SDK actually serialized and sent the decision body through the
         // REST-client marshalling path — not just that a 200 endpoint was reached.
-        verify(postRequestedFor(urlPathEqualTo("/agents/conv-hitl-001/resume"))
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/agents/conv-hitl-001/resume"))
                 .withRequestBody(matchingJsonPath("$.verdict", equalTo("APPROVED")))
                 .withRequestBody(matchingJsonPath("$.note", equalTo("looks good"))));
     }
@@ -87,7 +105,7 @@ class EddiHitlTest {
         try (Response response = conv.resume(HitlDecision.reject("not allowed"))) {
             assertEquals(200, response.getStatus());
         }
-        verify(postRequestedFor(urlPathEqualTo("/agents/conv-hitl-001/resume"))
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/agents/conv-hitl-001/resume"))
                 .withRequestBody(matchingJsonPath("$.verdict", equalTo("REJECTED")))
                 .withRequestBody(matchingJsonPath("$.note", equalTo("not allowed"))));
     }
@@ -134,7 +152,7 @@ class EddiHitlTest {
         // Guard the actual behavior: the paused conversation must NEVER be ended.
         // (endQuietly swallows errors, so asserting only on the returned value would
         // not catch a regression that erroneously ends it.)
-        verify(0, postRequestedFor(urlPathEqualTo("/agents/conv-hitl-001/endConversation")));
+        wireMock.verifyThat(0, postRequestedFor(urlPathEqualTo("/agents/conv-hitl-001/endConversation")));
     }
 
     @Test
