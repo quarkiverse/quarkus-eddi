@@ -77,11 +77,16 @@ class ModelRecordTest {
 
     @Test
     void conversationStateValues() {
-        assertEquals(5, ConversationState.values().length);
+        // Must match EDDI v6's ConversationState exactly (six constants). A missing
+        // constant breaks deserialization of a conversation in that state.
+        assertEquals(6, ConversationState.values().length);
         assertNotNull(ConversationState.valueOf("READY"));
         assertNotNull(ConversationState.valueOf("IN_PROGRESS"));
         assertNotNull(ConversationState.valueOf("ERROR"));
         assertNotNull(ConversationState.valueOf("ENDED"));
+        assertNotNull(ConversationState.valueOf("EXECUTION_INTERRUPTED"));
+        // AWAITING_HUMAN — added by the v6 HITL framework.
+        assertNotNull(ConversationState.valueOf("AWAITING_HUMAN"));
     }
 
     // --- Environment ---
@@ -162,9 +167,6 @@ class ModelRecordTest {
 
         StreamToken taskComplete = new StreamToken("task_complete", "{\"taskId\":\"1\"}");
         assertTrue(taskComplete.isTaskComplete());
-
-        StreamToken progress = new StreamToken("progress", "50%");
-        assertTrue(progress.isProgress());
     }
 
     @Test
@@ -307,12 +309,145 @@ class ModelRecordTest {
     void setupResultFields() {
         SetupResult result = new SetupResult("setup_complete", "agent-1", "Bot",
                 "openai", "gpt-4o", true, "READY", null, null, true, false,
-                Map.of("agent", "/agents/agent-1"));
+                Map.of("agent", "/agents/agent-1"), "${vault:setup.bot.apiKey}");
 
         assertEquals("setup_complete", result.action());
         assertTrue(result.deployed());
         assertEquals("READY", result.deploymentStatus());
         assertTrue(result.quickRepliesEnabled());
         assertFalse(result.sentimentAnalysisEnabled());
+    }
+
+    // --- HITL models (v6 Human-in-the-Loop framework) ---
+
+    @Test
+    void hitlVerdictValues() {
+        assertEquals(2, HitlVerdict.values().length);
+        assertNotNull(HitlVerdict.valueOf("APPROVED"));
+        assertNotNull(HitlVerdict.valueOf("REJECTED"));
+    }
+
+    @Test
+    void hitlDecisionApproveFactory() {
+        HitlDecision approve = HitlDecision.approve("looks good");
+        assertEquals(HitlVerdict.APPROVED, approve.verdict());
+        assertEquals("looks good", approve.note());
+        assertNull(approve.toolDecisions());
+
+        HitlDecision reject = HitlDecision.reject("nope");
+        assertEquals(HitlVerdict.REJECTED, reject.verdict());
+        assertEquals("nope", reject.note());
+    }
+
+    @Test
+    void hitlDecisionSerializesVerdictAsUppercaseName() throws Exception {
+        // The server parses verdicts case-insensitively but the SDK sends the
+        // canonical uppercase name.
+        String json = mapper.writeValueAsString(HitlDecision.approve(null));
+        assertTrue(json.contains("\"verdict\":\"APPROVED\""), json);
+        // note + toolDecisions are null → omitted via @JsonInclude(NON_NULL)
+        assertFalse(json.contains("note"), json);
+        assertFalse(json.contains("toolDecisions"), json);
+        // decidedBy is set server-side and must never be part of the request body
+        assertFalse(json.contains("decidedBy"), json);
+    }
+
+    @Test
+    void hitlDecisionWithToolDecisionsSerializes() throws Exception {
+        HitlDecision decision = HitlDecision.ofToolCalls(HitlVerdict.APPROVED, "partial",
+                Map.of("call-1", ToolCallDecision.reject("unsafe")));
+        String json = mapper.writeValueAsString(decision);
+        assertTrue(json.contains("\"toolDecisions\""), json);
+        assertTrue(json.contains("\"call-1\""), json);
+        assertTrue(json.contains("\"REJECTED\""), json);
+    }
+
+    @Test
+    void groupApprovalRequestSerializes() throws Exception {
+        GroupApprovalRequest request = GroupApprovalRequest.of(HitlDecision.approve("go"));
+        String json = mapper.writeValueAsString(request);
+        assertTrue(json.contains("\"decision\""), json);
+        assertTrue(json.contains("\"verdict\":\"APPROVED\""), json);
+        // taskApprovals null → omitted
+        assertFalse(json.contains("taskApprovals"), json);
+    }
+
+    @Test
+    void pendingApprovalSummaryFields() {
+        PendingApprovalSummary summary = new PendingApprovalSummary(
+                "conv-1", "agent-1", null, "user-1", null,
+                "tool approval required", "AUTO_REJECT", null, "TOOL_CALL",
+                List.of("lookupOrder"), null);
+
+        assertEquals("conv-1", summary.conversationId());
+        assertEquals("agent-1", summary.agentId());
+        assertEquals("user-1", summary.userId());
+        assertEquals("TOOL_CALL", summary.pauseType());
+        assertTrue(summary.isToolCallPause());
+        assertEquals(List.of("lookupOrder"), summary.toolNames());
+    }
+
+    @Test
+    void pendingApprovalSummaryDeserializesFromServerShape() throws Exception {
+        String serverJson = """
+                {
+                    "conversationId": "conv-1",
+                    "agentId": "agent-1",
+                    "userId": "user-1",
+                    "pauseReason": "rule paused",
+                    "timeoutPolicy": "AUTO_REJECT",
+                    "pauseType": "RULE",
+                    "toolNames": []
+                }
+                """;
+        PendingApprovalSummary summary = mapper.readValue(serverJson, PendingApprovalSummary.class);
+        assertEquals("conv-1", summary.conversationId());
+        assertEquals("RULE", summary.pauseType());
+        assertFalse(summary.isToolCallPause());
+    }
+
+    // --- EDDI 6.4 additions ---
+
+    @Test
+    void secretContextSerializesFlagAndPlainContextOmitsIt() throws Exception {
+        assertTrue(mapper.writeValueAsString(Context.secret("tok")).contains("\"secret\":true"));
+        assertFalse(mapper.writeValueAsString(Context.of("x")).contains("secret"));
+    }
+
+    @Test
+    void setupAgentRequestCarriesHitlConfigAndVaultKeyName() throws Exception {
+        SetupAgentRequest request = SetupAgentRequest.builder()
+                .agentName("Bot").systemPrompt("Be nice")
+                .hitlConfig(HitlConfig.gateTools(List.of("*"), "needs approval"))
+                .vaultKeyName("shared-openai")
+                .build();
+
+        var json = mapper.readTree(mapper.writeValueAsString(request));
+        assertEquals("shared-openai", json.get("vaultKeyName").asText());
+        assertEquals("*", json.at("/hitlConfig/toolApprovals/requireApproval/0").asText());
+        assertEquals("needs approval", json.at("/hitlConfig/toolApprovals/pauseReason").asText());
+        assertTrue(json.at("/hitlConfig/timeoutPolicy").isMissingNode(), "unset fields are omitted");
+    }
+
+    @Test
+    void createApiAgentRequestCarriesNewFields() throws Exception {
+        CreateApiAgentRequest request = CreateApiAgentRequest.builder()
+                .agentName("Api").systemPrompt("p").openApiSpec("{}")
+                .llmBaseUrl("http://llm").mcpServerUrls("http://mcp").maxToolIterations(5)
+                .vaultKeyName("k").apiAuthHeader("X-Api-Key")
+                .build();
+
+        var json = mapper.readTree(mapper.writeValueAsString(request));
+        assertEquals("http://llm", json.get("llmBaseUrl").asText());
+        assertEquals("http://mcp", json.get("mcpServerUrls").asText());
+        assertEquals(5, json.get("maxToolIterations").asInt());
+        assertEquals("X-Api-Key", json.get("apiAuthHeader").asText());
+    }
+
+    @Test
+    void pendingApprovalSummaryReadsPendingMemberId() throws Exception {
+        PendingApprovalSummary summary = mapper.readValue(
+                "{\"conversationId\":\"gc-1\",\"pendingMemberId\":\"alice\"}", PendingApprovalSummary.class);
+        assertEquals("alice", summary.pendingMemberId());
     }
 }

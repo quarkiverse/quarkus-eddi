@@ -4,10 +4,11 @@ import java.util.List;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.sse.InboundSseEvent;
 
 import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import org.jboss.resteasy.reactive.RestStreamElementType;
+import org.jboss.resteasy.reactive.client.SseEvent;
 
 import io.quarkiverse.eddi.model.InputData;
 import io.smallrye.mutiny.Multi;
@@ -18,7 +19,7 @@ import io.smallrye.mutiny.Multi;
  * Maps to EDDI's {@code IRestAgentEngineStreaming} at
  * {@code POST /agents/{conversationId}/stream}.
  * <p>
- * Returns a {@link Multi} of {@link InboundSseEvent} objects that preserve
+ * Returns a {@link Multi} of {@link SseEvent} objects that preserve
  * the SSE event name ({@code task_start}, {@code token}, {@code done},
  * {@code error}, etc.) alongside the payload data.
  */
@@ -42,7 +43,8 @@ public interface EddiStreamingRestClient {
     @Path("/{conversationId}/stream")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    Multi<InboundSseEvent> sayStreaming(
+    @RestStreamElementType(MediaType.TEXT_PLAIN)
+    Multi<SseEvent<String>> sayStreaming(
             @PathParam("conversationId") String conversationId,
             @QueryParam("returnDetailed") @DefaultValue("false") Boolean returnDetailed,
             @QueryParam("returnCurrentStepOnly") @DefaultValue("true") Boolean returnCurrentStepOnly,

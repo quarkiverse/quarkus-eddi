@@ -21,7 +21,23 @@ public record CreateApiAgentRequest(
         Boolean enableQuickReplies,
         Boolean enableSentimentAnalysis,
         Boolean deploy,
-        String environment) {
+        String environment,
+        String llmBaseUrl,
+        HitlConfig hitlConfig,
+        String mcpServerUrls,
+        Integer maxToolIterations,
+        String vaultKeyName,
+        String apiAuthHeader) {
+
+    /**
+     * Pre-6.4 constructor, kept for source compatibility.
+     */
+    public CreateApiAgentRequest(String agentName, String systemPrompt, String openApiSpec, String provider,
+            String model, String apiKey, String apiBaseUrl, String apiAuth, String endpoints,
+            Boolean enableQuickReplies, Boolean enableSentimentAnalysis, Boolean deploy, String environment) {
+        this(agentName, systemPrompt, openApiSpec, provider, model, apiKey, apiBaseUrl, apiAuth, endpoints,
+                enableQuickReplies, enableSentimentAnalysis, deploy, environment, null, null, null, null, null, null);
+    }
 
     public static Builder<? extends Builder<?>> builder() {
         return new Builder<>();
@@ -47,6 +63,12 @@ public record CreateApiAgentRequest(
         private Boolean enableSentimentAnalysis;
         private Boolean deploy;
         private String environment;
+        private String llmBaseUrl;
+        private HitlConfig hitlConfig;
+        private String mcpServerUrls;
+        private Integer maxToolIterations;
+        private String vaultKeyName;
+        private String apiAuthHeader;
 
         protected T self() {
             return (T) this;
@@ -117,9 +139,40 @@ public record CreateApiAgentRequest(
             return self();
         }
 
+        public T llmBaseUrl(String llmBaseUrl) {
+            this.llmBaseUrl = llmBaseUrl;
+            return self();
+        }
+
+        public T hitlConfig(HitlConfig hitlConfig) {
+            this.hitlConfig = hitlConfig;
+            return self();
+        }
+
+        public T mcpServerUrls(String mcpServerUrls) {
+            this.mcpServerUrls = mcpServerUrls;
+            return self();
+        }
+
+        public T maxToolIterations(Integer maxToolIterations) {
+            this.maxToolIterations = maxToolIterations;
+            return self();
+        }
+
+        public T vaultKeyName(String vaultKeyName) {
+            this.vaultKeyName = vaultKeyName;
+            return self();
+        }
+
+        public T apiAuthHeader(String apiAuthHeader) {
+            this.apiAuthHeader = apiAuthHeader;
+            return self();
+        }
+
         public CreateApiAgentRequest build() {
             return new CreateApiAgentRequest(agentName, systemPrompt, openApiSpec, provider, model, apiKey,
-                    apiBaseUrl, apiAuth, endpoints, enableQuickReplies, enableSentimentAnalysis, deploy, environment);
+                    apiBaseUrl, apiAuth, endpoints, enableQuickReplies, enableSentimentAnalysis, deploy, environment,
+                    llmBaseUrl, hitlConfig, mcpServerUrls, maxToolIterations, vaultKeyName, apiAuthHeader);
         }
     }
 }

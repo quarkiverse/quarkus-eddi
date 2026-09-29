@@ -61,6 +61,11 @@ class EddiApiKeyFilterTest {
             }
 
             @Override
+            public java.time.Duration timeout() {
+                return java.time.Duration.ofMinutes(5);
+            }
+
+            @Override
             public String environment() {
                 return "production";
             }
@@ -68,21 +73,6 @@ class EddiApiKeyFilterTest {
             @Override
             public Optional<String> apiKey() {
                 return apiKey;
-            }
-
-            @Override
-            public McpBridgeConfig mcpBridge() {
-                return new McpBridgeConfig() {
-                    @Override
-                    public boolean enabled() {
-                        return true;
-                    }
-
-                    @Override
-                    public String agents() {
-                        return "*";
-                    }
-                };
             }
 
             @Override

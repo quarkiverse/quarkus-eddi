@@ -5,7 +5,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 /**
  * Request object for setting up a standard EDDI agent.
  * <p>
- * Matches EDDI v6's {@code SetupAgentRequest} record. Maps to
+ * Matches EDDI v6's {@code SetupAgentRequest} record. {@code hitlConfig} sets the created
+ * agent's approval gate; {@code vaultKeyName} names the vault entry for the LLM API key so
+ * several agents can share one stored credential. Maps to
  * {@code POST /administration/agents/setup}.
  * <p>
  * Example:
@@ -34,7 +36,21 @@ public record SetupAgentRequest(
         Boolean enableSentimentAnalysis,
         String mcpServerUrls,
         Boolean deploy,
-        String environment) {
+        String environment,
+        HitlConfig hitlConfig,
+        String vaultKeyName) {
+
+    /**
+     * Pre-6.4 constructor, kept for source compatibility.
+     */
+    public SetupAgentRequest(String agentName, String systemPrompt, String provider, String model, String apiKey,
+            String baseUrl, String introMessage, Boolean enableBuiltInTools, String builtInToolsWhitelist,
+            Boolean enableQuickReplies, Boolean enableSentimentAnalysis, String mcpServerUrls, Boolean deploy,
+            String environment) {
+        this(agentName, systemPrompt, provider, model, apiKey, baseUrl, introMessage, enableBuiltInTools,
+                builtInToolsWhitelist, enableQuickReplies, enableSentimentAnalysis, mcpServerUrls, deploy, environment,
+                null, null);
+    }
 
     public static Builder<? extends Builder<?>> builder() {
         return new Builder<>();
@@ -61,6 +77,8 @@ public record SetupAgentRequest(
         private String mcpServerUrls;
         private Boolean deploy;
         private String environment;
+        private HitlConfig hitlConfig;
+        private String vaultKeyName;
 
         protected T self() {
             return (T) this;
@@ -136,10 +154,20 @@ public record SetupAgentRequest(
             return self();
         }
 
+        public T hitlConfig(HitlConfig hitlConfig) {
+            this.hitlConfig = hitlConfig;
+            return self();
+        }
+
+        public T vaultKeyName(String vaultKeyName) {
+            this.vaultKeyName = vaultKeyName;
+            return self();
+        }
+
         public SetupAgentRequest build() {
             return new SetupAgentRequest(agentName, systemPrompt, provider, model, apiKey, baseUrl, introMessage,
                     enableBuiltInTools, builtInToolsWhitelist, enableQuickReplies, enableSentimentAnalysis,
-                    mcpServerUrls, deploy, environment);
+                    mcpServerUrls, deploy, environment, hitlConfig, vaultKeyName);
         }
     }
 }

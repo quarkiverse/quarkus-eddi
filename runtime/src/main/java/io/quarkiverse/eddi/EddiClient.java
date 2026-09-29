@@ -1,10 +1,10 @@
 package io.quarkiverse.eddi;
 
-import static io.quarkiverse.eddi.EddiDefaults.DEFAULT_TIMEOUT;
-
 import java.net.URI;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -12,11 +12,16 @@ import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.client.SseEvent;
 
 import io.quarkiverse.eddi.client.*;
+import io.quarkiverse.eddi.client.EddiGroupRestClient.AttachmentRef;
 import io.quarkiverse.eddi.client.EddiGroupRestClient.DiscussRequest;
+import io.quarkiverse.eddi.client.EddiGroupRestClient.FollowUpRequest;
+import io.quarkiverse.eddi.client.EddiGroupRestClient.HumanInputRequest;
 import io.quarkiverse.eddi.config.EddiConfig;
 import io.quarkiverse.eddi.model.*;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 
 /**
@@ -99,42 +104,63 @@ public class EddiClient {
      * and automatically ends the conversation.
      */
     public String chat(String agentId, String message) {
-        Conversation conv = agent(agentId).startConversation();
-        try {
-            ConversationResult result = conv.say(message);
-            return result.text();
-        } finally {
-            conv.endQuietly();
-        }
+        return chatFull(agentId, message).text();
     }
 
     /**
      * Send a message and get the full result (including quick replies, actions, etc.).
      * Creates a new conversation, sends the message, returns the result,
      * and automatically ends the conversation.
+     * <p>
+     * Exception: if the response leaves the conversation paused awaiting a human
+     * decision ({@code AWAITING_HUMAN}), it is <em>not</em> ended — ending it would
+     * cancel the pending approval. Resume it via
+     * {@code eddi.agent(agentId).conversation(result.conversationId())}.
      */
     public ConversationResult chatFull(String agentId, String message) {
         Conversation conv = agent(agentId).startConversation();
+        boolean keepAlive = false;
         try {
-            return conv.say(message);
+            ConversationResult result = conv.say(message);
+            keepAlive = result.isAwaitingHuman();
+            return result;
         } finally {
-            conv.endQuietly();
+            if (!keepAlive) {
+                conv.endQuietly();
+            }
         }
     }
 
     /**
      * Reactive one-liner — starts a conversation, sends a message,
-     * and automatically ends the conversation afterwards.
+     * and automatically ends the conversation afterwards (unless it is left
+     * paused awaiting a human decision).
      */
     public Uni<ConversationResult> chatAsync(String agentId, String message) {
         return agent(agentId).startConversationAsync()
                 .flatMap(conv -> conv.sayAsync(message)
-                        .eventually(() -> conv.endAsync()
-                                .onFailure().invoke(e -> LOG.debugf(e,
-                                        "Failed to end conversation %s (cleanup)", conv.id()))));
+                        .call(result -> result.isAwaitingHuman()
+                                ? Uni.createFrom().voidItem()
+                                : endQuietlyAsync(conv))
+                        .onFailure().call(() -> endQuietlyAsync(conv)));
+    }
+
+    private Uni<Void> endQuietlyAsync(Conversation conv) {
+        return conv.endAsync()
+                .onFailure().invoke(e -> LOG.debugf(e,
+                        "Failed to end conversation %s (cleanup)", conv.id()))
+                .onFailure().recoverWithNull()
+                .replaceWithVoid();
     }
 
     // ─── Agent builder ────────────────────────────
+
+    /**
+     * Timeout of the blocking convenience methods ({@code quarkus.eddi.timeout}).
+     */
+    Duration timeout() {
+        return config.timeout();
+    }
 
     /**
      * Start building an interaction with a specific agent.
@@ -238,6 +264,16 @@ public class EddiClient {
         return new CoordinatorOps();
     }
 
+    // ─── HITL approvals inbox ─────────────────────
+
+    /**
+     * Access the HITL (Human-in-the-Loop) approvals inboxes — conversations and
+     * group discussions currently awaiting a human decision.
+     */
+    public ApprovalOps approvals() {
+        return new ApprovalOps();
+    }
+
     // ════════════════════════════════════════════════
     //  Inner builders
     // ════════════════════════════════════════════════
@@ -271,10 +307,10 @@ public class EddiClient {
         }
 
         /**
-         * Start a new conversation (blocking, 30s timeout).
+         * Start a new conversation (blocking, up to quarkus.eddi.timeout).
          */
         public Conversation startConversation() {
-            return startConversationAsync().await().atMost(DEFAULT_TIMEOUT);
+            return startConversationAsync().await().atMost(timeout());
         }
 
         /**
@@ -293,7 +329,7 @@ public class EddiClient {
             return startUni.map(response -> {
                 String location = response.getHeaderString("Location");
                 String conversationId = extractIdFromUri(location);
-                return new Conversation(conversationId, agentId, agentClient, streamingClient);
+                return new Conversation(conversationId, agentId, agentClient, streamingClient, timeout());
             });
         }
 
@@ -301,7 +337,7 @@ public class EddiClient {
          * Resume an existing conversation.
          */
         public Conversation conversation(String conversationId) {
-            return new Conversation(conversationId, agentId, agentClient, streamingClient);
+            return new Conversation(conversationId, agentId, agentClient, streamingClient, timeout());
         }
     }
 
@@ -325,7 +361,8 @@ public class EddiClient {
          * Build the managed conversation wrapper.
          */
         public ManagedConversation build() {
-            return new ManagedConversation(intent, userId, managedClient);
+            Objects.requireNonNull(userId, "managed conversations need a userId: call userId(...) before build()");
+            return new ManagedConversation(intent, userId, managedClient, timeout());
         }
     }
 
@@ -335,6 +372,7 @@ public class EddiClient {
     public class GroupBuilder {
         private final String groupId;
         private String userId;
+        private List<AttachmentRef> attachments;
 
         GroupBuilder(String groupId) {
             this.groupId = groupId;
@@ -346,17 +384,213 @@ public class EddiClient {
         }
 
         /**
-         * Start a group discussion (reactive).
+         * Attachments shared with every member agent when the discussion starts.
+         * Not accepted by {@code continueDiscussion}.
          */
-        public Uni<Response> discussAsync(String question) {
-            return groupClient.discuss(groupId, new DiscussRequest(question, userId));
+        public GroupBuilder attachments(List<AttachmentRef> attachments) {
+            this.attachments = attachments;
+            return this;
         }
 
         /**
-         * Start a group discussion (blocking, 30s timeout).
+         * Start a group discussion (reactive).
+         */
+        public Uni<Response> discussAsync(String question) {
+            return groupClient.discuss(groupId, new DiscussRequest(question, userId, attachments));
+        }
+
+        /**
+         * Start a group discussion (blocking, up to quarkus.eddi.timeout).
          */
         public Response discuss(String question) {
-            return discussAsync(question).await().atMost(DEFAULT_TIMEOUT);
+            return discussAsync(question).await().atMost(timeout());
+        }
+
+        /**
+         * Start a group discussion and stream progress events (SSE).
+         */
+        public Multi<StreamToken> discussStreaming(String question) {
+            return groupClient.discussStreaming(groupId, new DiscussRequest(question, userId, attachments))
+                    .filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
+        }
+
+        // ─── Read / list / delete ─────────────────
+
+        /**
+         * Read a group conversation transcript (reactive).
+         */
+        public Uni<Map<String, Object>> readAsync(String groupConversationId) {
+            return groupClient.readGroupConversation(groupId, groupConversationId);
+        }
+
+        /**
+         * Read a group conversation transcript (blocking, up to quarkus.eddi.timeout).
+         */
+        public Map<String, Object> read(String groupConversationId) {
+            return readAsync(groupConversationId).await().atMost(timeout());
+        }
+
+        /**
+         * List this group's conversations (reactive).
+         */
+        public Uni<List<Map<String, Object>>> listAsync(int index, int limit) {
+            return groupClient.listGroupConversations(groupId, index, limit);
+        }
+
+        /**
+         * List this group's most recent conversations (blocking, up to quarkus.eddi.timeout).
+         */
+        public List<Map<String, Object>> list() {
+            return listAsync(0, 20).await().atMost(timeout());
+        }
+
+        /**
+         * Delete a group conversation and its member conversations (reactive).
+         */
+        public Uni<Response> deleteAsync(String groupConversationId) {
+            return groupClient.deleteGroupConversation(groupId, groupConversationId);
+        }
+
+        // ─── Follow-up / continue / close ─────────
+
+        /**
+         * Ask one member of a completed discussion a follow-up question (reactive).
+         *
+         * @param targetAgentId the member's agent id or display name
+         */
+        public Uni<Response> followUpAsync(String groupConversationId, String targetAgentId, String question) {
+            return groupClient.followUpWithMember(groupId, groupConversationId,
+                    new FollowUpRequest(question, targetAgentId, userId));
+        }
+
+        /**
+         * Ask one member of a completed discussion a follow-up question (blocking,
+         * up to quarkus.eddi.timeout).
+         */
+        public Response followUp(String groupConversationId, String targetAgentId, String question) {
+            return followUpAsync(groupConversationId, targetAgentId, question).await().atMost(timeout());
+        }
+
+        /**
+         * Run another round of a completed discussion with a new question (reactive).
+         */
+        public Uni<Response> continueDiscussionAsync(String groupConversationId, String question) {
+            return groupClient.continueDiscussion(groupId, groupConversationId, new DiscussRequest(question, userId));
+        }
+
+        /**
+         * Run another round of a completed discussion and stream progress (SSE).
+         */
+        public Multi<StreamToken> continueDiscussionStreaming(String groupConversationId, String question) {
+            return groupClient.continueDiscussionStreaming(groupId, groupConversationId,
+                    new DiscussRequest(question, userId)).filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
+        }
+
+        /**
+         * Permanently close a group conversation (reactive).
+         */
+        public Uni<Response> closeAsync(String groupConversationId) {
+            return groupClient.closeGroupConversation(groupId, groupConversationId);
+        }
+
+        /**
+         * Permanently close a group conversation (blocking, up to quarkus.eddi.timeout).
+         */
+        public void close(String groupConversationId) {
+            closeAsync(groupConversationId).await().atMost(timeout()).close();
+        }
+
+        /**
+         * Submit a HUMAN member's turn to a discussion awaiting human input (reactive).
+         */
+        public Uni<Response> submitHumanInputAsync(String groupConversationId, String memberId, String content) {
+            return groupClient.submitHumanInput(groupId, groupConversationId, new HumanInputRequest(memberId, content));
+        }
+
+        /**
+         * Submit a HUMAN member's turn to a discussion awaiting human input (blocking,
+         * up to quarkus.eddi.timeout).
+         */
+        public Response submitHumanInput(String groupConversationId, String memberId, String content) {
+            return submitHumanInputAsync(groupConversationId, memberId, content).await().atMost(timeout());
+        }
+
+        // ─── Cancel ───────────────────────────────
+
+        public Uni<Response> cancelAsync(String groupConversationId) {
+            return groupClient.cancelDiscussion(groupId, groupConversationId);
+        }
+
+        public void cancel(String groupConversationId) {
+            cancelAsync(groupConversationId).await().atMost(timeout()).close();
+        }
+
+        // ─── HITL approvals ───────────────────────
+
+        /**
+         * Approve/resume a paused group discussion (reactive).
+         */
+        public Uni<Response> approveAsync(String groupConversationId, HitlDecision decision) {
+            return groupClient.approveGroupPhase(groupId, groupConversationId, GroupApprovalRequest.of(decision));
+        }
+
+        /**
+         * Approve/resume a paused group discussion (blocking, up to quarkus.eddi.timeout).
+         */
+        public Response approve(String groupConversationId, HitlDecision decision) {
+            return approveAsync(groupConversationId, decision).await().atMost(timeout());
+        }
+
+        /**
+         * Approve/resume a paused group discussion with an optional note.
+         */
+        public Response approve(String groupConversationId, String note) {
+            return approve(groupConversationId, HitlDecision.approve(note));
+        }
+
+        /**
+         * Reject and resume a paused group discussion with an optional note.
+         */
+        public Response reject(String groupConversationId, String note) {
+            return approve(groupConversationId, HitlDecision.reject(note));
+        }
+
+        /**
+         * Approve/resume a paused group discussion and stream the resumed progress
+         * (SSE).
+         */
+        public Multi<StreamToken> approveStreaming(String groupConversationId, HitlDecision decision) {
+            return groupClient.approveGroupPhaseStreaming(groupId, groupConversationId,
+                    GroupApprovalRequest.of(decision)).filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
+        }
+
+        /**
+         * Read a group conversation's approval status (reactive).
+         */
+        public Uni<Response> approvalStatusAsync(String groupConversationId, String detail) {
+            return groupClient.getGroupApprovalStatus(groupId, groupConversationId, detail);
+        }
+
+        /**
+         * Read a group conversation's approval status summary (blocking, up to quarkus.eddi.timeout).
+         */
+        public Response approvalStatus(String groupConversationId) {
+            return approvalStatusAsync(groupConversationId, "summary").await().atMost(timeout());
+        }
+
+        /**
+         * List this group's conversations awaiting human approval (reactive).
+         */
+        public Uni<List<PendingApprovalSummary>> pendingApprovalsAsync(int limit) {
+            return groupClient.listGroupPendingApprovals(groupId, limit);
+        }
+
+        /**
+         * List this group's conversations awaiting human approval (blocking, up to quarkus.eddi.timeout
+         * timeout).
+         */
+        public List<PendingApprovalSummary> pendingApprovals() {
+            return pendingApprovalsAsync(100).await().atMost(timeout());
         }
     }
 
@@ -385,10 +619,10 @@ public class EddiClient {
         }
 
         /**
-         * Execute the setup and return the result (blocking, 30s timeout).
+         * Execute the setup and return the result (blocking, up to quarkus.eddi.timeout).
          */
         public SetupResult create() {
-            return createAsync().await().atMost(DEFAULT_TIMEOUT);
+            return createAsync().await().atMost(timeout());
         }
     }
 
@@ -413,10 +647,10 @@ public class EddiClient {
         }
 
         /**
-         * Execute the API agent setup and return the result (blocking, 30s timeout).
+         * Execute the API agent setup and return the result (blocking, up to quarkus.eddi.timeout).
          */
         public SetupResult create() {
-            return createAsync().await().atMost(DEFAULT_TIMEOUT);
+            return createAsync().await().atMost(timeout());
         }
     }
 
@@ -438,11 +672,11 @@ public class EddiClient {
         }
 
         public void deploy(String agentId, int version) {
-            deployAsync(agentId, version).await().atMost(DEFAULT_TIMEOUT);
+            deployAsync(agentId, version).await().atMost(timeout());
         }
 
         public void deploy(String agentId, int version, String environment) {
-            deployAsync(agentId, version, environment).await().atMost(DEFAULT_TIMEOUT);
+            deployAsync(agentId, version, environment).await().atMost(timeout());
         }
 
         /**
@@ -461,11 +695,11 @@ public class EddiClient {
         }
 
         public void undeploy(String agentId, int version) {
-            undeployAsync(agentId, version).await().atMost(DEFAULT_TIMEOUT);
+            undeployAsync(agentId, version).await().atMost(timeout());
         }
 
         public void undeploy(String agentId, int version, String environment) {
-            undeployAsync(agentId, version, environment).await().atMost(DEFAULT_TIMEOUT);
+            undeployAsync(agentId, version, environment).await().atMost(timeout());
         }
 
         public Uni<List<AgentDeploymentStatus>> listDeployedAsync() {
@@ -477,11 +711,11 @@ public class EddiClient {
         }
 
         public List<AgentDeploymentStatus> listDeployed() {
-            return listDeployedAsync().await().atMost(DEFAULT_TIMEOUT);
+            return listDeployedAsync().await().atMost(timeout());
         }
 
         public List<AgentDeploymentStatus> listDeployed(String environment) {
-            return listDeployedAsync(environment).await().atMost(DEFAULT_TIMEOUT);
+            return listDeployedAsync(environment).await().atMost(timeout());
         }
     }
 
@@ -489,6 +723,19 @@ public class EddiClient {
      * Log administration operations.
      */
     public class LogOps {
+
+        /**
+         * Live-tail log entries (SSE), optionally filtered. Each token's data is the
+         * JSON log entry. The stream stays open until cancelled.
+         *
+         * @param agentId filter by agent, or {@code null}
+         * @param conversationId filter by conversation, or {@code null}
+         * @param level minimum level, e.g. {@code INFO}
+         */
+        public Multi<StreamToken> stream(String agentId, String conversationId, String level) {
+            return logClient.streamLogs(agentId, conversationId, level).filter(EddiClient::isEvent)
+                    .map(EddiClient::toStreamToken);
+        }
 
         /**
          * Get recent logs with default filters (INFO level, limit 100).
@@ -505,24 +752,31 @@ public class EddiClient {
         }
 
         public List<LogEntry> recent() {
-            return recentAsync().await().atMost(DEFAULT_TIMEOUT);
+            return recentAsync().await().atMost(timeout());
         }
 
         /**
          * Get historical logs for a specific agent.
          */
-        public Uni<List<Map<String, Object>>> historyAsync(String agentId) {
+        public Uni<List<LogEntry>> historyAsync(String agentId) {
             return historyAsync(null, agentId, null, null, null, null, 0, 100);
         }
 
         /**
          * Get historical logs with full filter control.
          */
-        public Uni<List<Map<String, Object>>> historyAsync(String environment, String agentId,
+        public Uni<List<LogEntry>> historyAsync(String environment, String agentId,
                 Integer agentVersion, String conversationId, String userId,
                 String instanceId, int skip, int limit) {
             return logClient.getHistoryLogs(environment, agentId, agentVersion, conversationId, userId,
                     instanceId, skip, limit);
+        }
+
+        /**
+         * Get historical logs for a specific agent (blocking, up to quarkus.eddi.timeout).
+         */
+        public List<LogEntry> history(String agentId) {
+            return historyAsync(agentId).await().atMost(timeout());
         }
 
         public Uni<Map<String, String>> instanceIdAsync() {
@@ -535,12 +789,19 @@ public class EddiClient {
      */
     public class CoordinatorOps {
 
+        /**
+         * Live-tail coordinator events (SSE). The stream stays open until cancelled.
+         */
+        public Multi<StreamToken> events() {
+            return coordinatorClient.streamEvents().filter(EddiClient::isEvent).map(EddiClient::toStreamToken);
+        }
+
         public Uni<CoordinatorStatus> statusAsync() {
             return coordinatorClient.getStatus();
         }
 
         public CoordinatorStatus status() {
-            return statusAsync().await().atMost(DEFAULT_TIMEOUT);
+            return statusAsync().await().atMost(timeout());
         }
 
         public Uni<List<DeadLetterEntry>> deadLettersAsync() {
@@ -548,7 +809,7 @@ public class EddiClient {
         }
 
         public List<DeadLetterEntry> deadLetters() {
-            return deadLettersAsync().await().atMost(DEFAULT_TIMEOUT);
+            return deadLettersAsync().await().atMost(timeout());
         }
 
         public Uni<Void> replayAsync(String entryId) {
@@ -564,9 +825,75 @@ public class EddiClient {
         }
     }
 
+    /**
+     * HITL approvals inbox operations — list conversations and group discussions
+     * awaiting a human decision.
+     */
+    public class ApprovalOps {
+
+        /**
+         * List single-agent conversations awaiting human approval (reactive,
+         * default limit 200).
+         */
+        public Uni<List<PendingApprovalSummary>> pendingAsync() {
+            return pendingAsync(200);
+        }
+
+        public Uni<List<PendingApprovalSummary>> pendingAsync(int limit) {
+            return agentClient.listPendingApprovals(limit);
+        }
+
+        public List<PendingApprovalSummary> pending() {
+            return pendingAsync().await().atMost(timeout());
+        }
+
+        public List<PendingApprovalSummary> pending(int limit) {
+            return pendingAsync(limit).await().atMost(timeout());
+        }
+
+        /**
+         * Cross-group inbox — list group conversations awaiting human approval
+         * across every group (reactive, default limit 100).
+         */
+        public Uni<List<PendingApprovalSummary>> pendingGroupsAsync() {
+            return pendingGroupsAsync(100);
+        }
+
+        public Uni<List<PendingApprovalSummary>> pendingGroupsAsync(int limit) {
+            return groupClient.listAllGroupPendingApprovals(limit);
+        }
+
+        public List<PendingApprovalSummary> pendingGroups() {
+            return pendingGroupsAsync().await().atMost(timeout());
+        }
+
+        public List<PendingApprovalSummary> pendingGroups(int limit) {
+            return pendingGroupsAsync(limit).await().atMost(timeout());
+        }
+    }
+
     // ════════════════════════════════════════════════
     //  Utilities
     // ════════════════════════════════════════════════
+
+    /**
+     * Map a raw SSE event to a {@link StreamToken}, preserving the server's event
+     * name (defaulting to {@code token} for unnamed events).
+     */
+    /**
+     * Drop comment-only frames such as EDDI's {@code : heartbeat} keep-alives, which
+     * carry neither an event name nor data.
+     */
+    static boolean isEvent(SseEvent<String> sseEvent) {
+        return sseEvent.name() != null || (sseEvent.data() != null && !sseEvent.data().isEmpty());
+    }
+
+    static StreamToken toStreamToken(SseEvent<String> sseEvent) {
+        String eventName = sseEvent.name();
+        String data = sseEvent.data();
+        String type = (eventName != null && !eventName.isEmpty()) ? eventName : "token";
+        return new StreamToken(type, data);
+    }
 
     static String extractIdFromUri(String uriString) {
         if (uriString == null || uriString.isBlank()) {

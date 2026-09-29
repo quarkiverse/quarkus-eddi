@@ -20,6 +20,7 @@ import java.util.Map;
  * @param quickRepliesEnabled whether quick replies are enabled
  * @param sentimentAnalysisEnabled whether sentiment analysis is enabled
  * @param resources map of created resource locations
+ * @param apiKeyVaultReference the {@code ${vault:...}} reference the LLM API key was stored under
  */
 public record SetupResult(
         String action,
@@ -33,5 +34,16 @@ public record SetupResult(
         List<String> groups,
         Boolean quickRepliesEnabled,
         Boolean sentimentAnalysisEnabled,
-        Map<String, Object> resources) {
+        Map<String, Object> resources,
+        String apiKeyVaultReference) {
+
+    /**
+     * Pre-6.4 constructor, kept for source compatibility.
+     */
+    public SetupResult(String action, String agentId, String agentName, String provider, String model,
+            Boolean deployed, String deploymentStatus, Integer endpointCount, List<String> groups,
+            Boolean quickRepliesEnabled, Boolean sentimentAnalysisEnabled, Map<String, Object> resources) {
+        this(action, agentId, agentName, provider, model, deployed, deploymentStatus, endpointCount, groups,
+                quickRepliesEnabled, sentimentAnalysisEnabled, resources, null);
+    }
 }

@@ -8,17 +8,18 @@ import jakarta.ws.rs.core.MediaType;
 
 import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import org.jboss.resteasy.reactive.RestStreamElementType;
+import org.jboss.resteasy.reactive.client.SseEvent;
 
 import io.quarkiverse.eddi.model.LogEntry;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 
 /**
  * MicroProfile REST Client for EDDI v6's log administration API.
  * <p>
- * Maps to EDDI's {@code IRestLogAdmin} at {@code /administration/logs}.
- * <p>
- * Note: The {@code /stream} SSE endpoint is not exposed here — use
- * Vert.x EventBus or a dedicated SSE client for live log tailing.
+ * Maps to EDDI's {@code IRestLogAdmin} at {@code /administration/logs}, including the
+ * {@code /stream} SSE live tail ({@link #streamLogs}).
  */
 @RegisterRestClient(configKey = "eddi")
 @RegisterProvider(EddiApiKeyFilter.class)
@@ -37,12 +38,13 @@ public interface EddiLogRestClient {
             @QueryParam("limit") @DefaultValue("100") int limit);
 
     /**
-     * Get historical logs from persistent storage.
+     * Get historical logs from persistent storage. Returns the same typed
+     * {@link LogEntry} list as {@link #getRecentLogs}.
      */
     @GET
     @Path("/history")
     @Produces(MediaType.APPLICATION_JSON)
-    Uni<List<Map<String, Object>>> getHistoryLogs(
+    Uni<List<LogEntry>> getHistoryLogs(
             @QueryParam("environment") String environment,
             @QueryParam("agentId") String agentId,
             @QueryParam("agentVersion") Integer agentVersion,
@@ -59,4 +61,18 @@ public interface EddiLogRestClient {
     @Path("/instance-id")
     @Produces(MediaType.APPLICATION_JSON)
     Uni<Map<String, String>> getInstanceId();
+
+    /**
+     * Live-tail log entries via SSE as they occur. EDDI sends each entry as a {@code log}
+     * event whose data is the JSON {@link LogEntry}, plus periodic heartbeat comment frames
+     * (dropped by {@code EddiClient.logs().stream(...)}). The stream stays open until cancelled.
+     */
+    @GET
+    @Path("/stream")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    @RestStreamElementType(MediaType.TEXT_PLAIN)
+    Multi<SseEvent<String>> streamLogs(
+            @QueryParam("agentId") String agentId,
+            @QueryParam("conversationId") String conversationId,
+            @QueryParam("level") @DefaultValue("INFO") String level);
 }

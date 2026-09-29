@@ -14,12 +14,12 @@ import io.quarkiverse.eddi.annotations.OnMessage;
 import io.quarkiverse.eddi.annotations.OnResponse;
 import io.quarkiverse.eddi.model.ConversationResult;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
-import io.quarkus.arc.deployment.GeneratedBeanBuildItem;
-import io.quarkus.arc.deployment.GeneratedBeanGizmoAdaptor;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.gizmo.*;
+import io.quarkus.resteasy.reactive.spi.GeneratedJaxRsResourceBuildItem;
+import io.quarkus.resteasy.reactive.spi.GeneratedJaxRsResourceGizmoAdaptor;
 
 /**
  * Build step processor that scans for {@link EddiAgent} annotations and generates
@@ -47,7 +47,7 @@ public class EddiAgentAnnotationProcessor {
 
     @BuildStep
     void processEddiAgentAnnotations(CombinedIndexBuildItem combinedIndex,
-            BuildProducer<GeneratedBeanBuildItem> generatedBeanProducer,
+            BuildProducer<GeneratedJaxRsResourceBuildItem> generatedResourceProducer,
             BuildProducer<AdditionalBeanBuildItem> additionalBeans) {
 
         var index = combinedIndex.getIndex();
@@ -57,11 +57,9 @@ public class EddiAgentAnnotationProcessor {
             ClassInfo classInfo = annotation.target().asClass();
             String agentId = annotation.value("id").asString();
             String pathValue = annotation.value("path").asString();
-            boolean streaming = annotation.value("streaming") != null
-                    && annotation.value("streaming").asBoolean();
-            String environment = annotation.value("environment") != null
-                    ? annotation.value("environment").asString()
-                    : "";
+            // valueWithDefault: annotation.value(...) is null for defaulted members
+            boolean streaming = annotation.valueWithDefault(index, "streaming").asBoolean();
+            String environment = annotation.valueWithDefault(index, "environment").asString();
 
             String className = classInfo.name().toString();
             String generatedName = className + "_EddiResource";
@@ -76,8 +74,10 @@ public class EddiAgentAnnotationProcessor {
             List<MethodInfo> onResponseMethods = classInfo.methods().stream()
                     .filter(m -> m.hasAnnotation(ON_RESPONSE))
                     .toList();
+            validateHooks(onMessageMethods, "@OnMessage", String.class.getName());
+            validateHooks(onResponseMethods, "@OnResponse", ConversationResult.class.getName());
 
-            generateResourceClass(generatedBeanProducer, generatedName, classInfo,
+            generateResourceClass(generatedResourceProducer, generatedName, classInfo,
                     agentId, pathValue, streaming, environment,
                     onMessageMethods, onResponseMethods);
 
@@ -90,12 +90,34 @@ public class EddiAgentAnnotationProcessor {
         }
     }
 
-    private void generateResourceClass(BuildProducer<GeneratedBeanBuildItem> producer,
+    /**
+     * Hooks must take exactly one parameter of {@code paramType} and return either
+     * {@code void} or {@code paramType}. Fail the build instead of silently skipping.
+     */
+    private static void validateHooks(List<MethodInfo> hooks, String annotation, String paramType) {
+        for (MethodInfo hook : hooks) {
+            String returnType = hook.returnType().name().toString();
+            boolean validParams = hook.parametersCount() == 1
+                    && hook.parameterType(0).name().toString().equals(paramType);
+            boolean validReturn = returnType.equals("void") || returnType.equals(paramType);
+            if (!validParams || !validReturn || !java.lang.reflect.Modifier.isPublic(hook.flags())
+                    || java.lang.reflect.Modifier.isStatic(hook.flags())) {
+                throw new IllegalStateException(String.format(
+                        "%s method %s.%s must be public, non-static and have the signature `void|%s name(%s)`",
+                        annotation, hook.declaringClass().name(), hook.name(), paramType, paramType));
+            }
+        }
+    }
+
+    private void generateResourceClass(BuildProducer<GeneratedJaxRsResourceBuildItem> producer,
             String generatedName, ClassInfo annotatedClass,
             String agentId, String pathValue, boolean streaming, String environment,
             List<MethodInfo> onMessageMethods, List<MethodInfo> onResponseMethods) {
 
-        var adaptor = new GeneratedBeanGizmoAdaptor(producer);
+        // Emit via Quarkus REST's generated-resource SPI (not GeneratedBeanBuildItem):
+        // only then does Quarkus REST index the class as a JAX-RS resource and
+        // register it as a bean, like Panache REST Data does for its resources.
+        var adaptor = new GeneratedJaxRsResourceGizmoAdaptor(producer);
 
         try (ClassCreator creator = ClassCreator.builder()
                 .classOutput(adaptor)
@@ -109,14 +131,18 @@ public class EddiAgentAnnotationProcessor {
 
             // Inject EddiClient
             FieldCreator eddiClientField = creator.getFieldCreator("eddiClient", EddiClient.class);
+            // Package-private: ArC's generated _Bean class injects fields directly
+            // and cannot write to private fields of a generated class.
+            eddiClientField.setModifiers(0);
             eddiClientField.addAnnotation("jakarta.inject.Inject");
 
             // Inject the annotated class (for hook invocation)
             FieldCreator hookBeanField = creator.getFieldCreator("hookBean", annotatedClass.name().toString());
+            hookBeanField.setModifiers(0);
             hookBeanField.addAnnotation("jakarta.inject.Inject");
 
             // Per-user conversation map with LRU eviction
-            creator.getFieldCreator("conversations", BoundedConversationMap.class);
+            creator.getFieldCreator("conversations", BoundedConversationMap.class).setModifiers(0);
 
             // Generate init method to initialize the map
             generateInitMethod(creator);
@@ -238,6 +264,9 @@ public class EddiAgentAnnotationProcessor {
                 io.smallrye.mutiny.Multi.class, String.class, String.class)) {
             method.addAnnotation("jakarta.ws.rs.POST");
             method.addAnnotation("jakarta.ws.rs.Path").addValue("value", "/stream");
+            // A Multi return type would run on the event loop, but starting the
+            // conversation (and user hooks) blocks — run on a worker thread.
+            method.addAnnotation("io.smallrye.common.annotation.Blocking");
             method.addAnnotation("jakarta.ws.rs.Consumes").addValue("value", new String[] { "text/plain" });
             method.addAnnotation("jakarta.ws.rs.Produces").addValue("value", new String[] { "text/event-stream" });
 
@@ -294,8 +323,8 @@ public class EddiAgentAnnotationProcessor {
     }
 
     /**
-     * Generate bytecode to get or create a conversation from the {@link BoundedConversationMap}.
-     * Uses the map's built-in LRU eviction — no manual size checking needed.
+     * Generate bytecode for {@code conversations.conversationFor(userId, eddiClient, agentId, environment)}:
+     * the user's conversation, started with that userId on first use.
      */
     private ResultHandle getOrCreateConversation(MethodCreator method, ClassCreator creator,
             String agentId, String environment, ResultHandle userId) {
@@ -303,48 +332,14 @@ public class EddiAgentAnnotationProcessor {
         ResultHandle conversations = method.readInstanceField(
                 FieldDescriptor.of(creator.getClassName(), "conversations", BoundedConversationMap.class),
                 method.getThis());
-
-        // Try to get existing conversation
-        ResultHandle existing = method.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(BoundedConversationMap.class, "get", Conversation.class, String.class),
-                conversations, userId);
-
-        AssignableResultHandle conv = method.createVariable(Conversation.class);
-
-        BranchResult branch = method.ifNull(existing);
-        BytecodeCreator trueBranch = branch.trueBranch();
-        BytecodeCreator falseBranch = branch.falseBranch();
-
-        // True branch: create new conversation and store in bounded map
-        ResultHandle eddiClient = trueBranch.readInstanceField(
+        ResultHandle eddiClient = method.readInstanceField(
                 FieldDescriptor.of(creator.getClassName(), "eddiClient", EddiClient.class),
-                trueBranch.getThis());
-        ResultHandle agentBuilder = trueBranch.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(EddiClient.class, "agent", EddiClient.AgentBuilder.class, String.class),
-                eddiClient, trueBranch.load(agentId));
-        if (environment != null && !environment.isEmpty()) {
-            agentBuilder = trueBranch.invokeVirtualMethod(
-                    MethodDescriptor.ofMethod(EddiClient.AgentBuilder.class, "environment",
-                            EddiClient.AgentBuilder.class, String.class),
-                    agentBuilder, trueBranch.load(environment));
-        }
-        ResultHandle newConv = trueBranch.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(EddiClient.AgentBuilder.class, "startConversation", Conversation.class),
-                agentBuilder);
+                method.getThis());
 
-        // Store in bounded map (LRU eviction happens automatically)
-        ResultHandle conversationsTrue = trueBranch.readInstanceField(
-                FieldDescriptor.of(creator.getClassName(), "conversations", BoundedConversationMap.class),
-                trueBranch.getThis());
-        trueBranch.invokeVirtualMethod(
-                MethodDescriptor.ofMethod(BoundedConversationMap.class, "put", void.class, String.class,
-                        Conversation.class),
-                conversationsTrue, userId, newConv);
-        trueBranch.assign(conv, newConv);
-
-        // False branch: reuse existing conversation
-        falseBranch.assign(conv, falseBranch.checkCast(existing, Conversation.class));
-
-        return conv;
+        return method.invokeVirtualMethod(
+                MethodDescriptor.ofMethod(BoundedConversationMap.class, "conversationFor", Conversation.class,
+                        String.class, EddiClient.class, String.class, String.class),
+                conversations, userId, eddiClient, method.load(agentId),
+                method.load(environment == null ? "" : environment));
     }
 }

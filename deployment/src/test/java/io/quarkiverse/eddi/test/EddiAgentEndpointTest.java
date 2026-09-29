@@ -1,10 +1,15 @@
 package io.quarkiverse.eddi.test;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.containing;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
-import org.junit.jupiter.api.Disabled;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
+
+import com.github.tomakehurst.wiremock.client.WireMock;
 
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -12,32 +17,16 @@ import io.quarkus.test.junit.QuarkusTest;
 /**
  * Integration test for {@code @EddiAgent} build-time endpoint generation.
  * <p>
- * <strong>Status: Disabled — Quarkus limitation.</strong>
- * The bytecode IS generated correctly (confirmed by build logs:
- * {@code "Generated @EddiAgent resource: SampleAgentEndpoint_EddiResource"})
- * and RESTEasy Reactive sees the class, but {@code ClassTransformingBuildStep}
- * reports "cannot transform — containing application archive could not be found".
- * <p>
- * This is a known limitation when using {@code GeneratedBeanBuildItem} for
- * JAX-RS resources. The generated class lives outside any application archive,
- * so RESTEasy can't fully process it. The fix requires producing the endpoint
- * as a Vert.x route or using {@code quarkus-rest-spi-deployment}'s
- * {@code AdditionalResourceClassBuildItem} with a synthetic ClassInfo.
- * <p>
- * <strong>What this test will verify once fixed:</strong>
- * <ul>
- * <li>Gizmo bytecode generation produces a valid JAX-RS resource</li>
- * <li>POST to /test-agent routes to the generated endpoint</li>
- * <li>{@code @OnMessage} hooks are invoked</li>
- * <li>EDDI response is correctly proxied back</li>
- * </ul>
- *
- * @see <a href="https://github.com/quarkusio/quarkus/issues/36841">quarkus#36841</a>
+ * Verifies that the Gizmo-generated resource (emitted through Quarkus REST's
+ * {@code GeneratedJaxRsResourceBuildItem}) is routed, invokes {@code @OnMessage}
+ * hooks, and proxies the EDDI response back as JSON.
  */
 @QuarkusTest
 @QuarkusTestResource(WireMockEddiResource.class)
-@Disabled("GeneratedBeanBuildItem classes not fully supported as JAX-RS resources by RESTEasy Reactive — tracked as post-6.0.0 work")
 class EddiAgentEndpointTest {
+
+    @ConfigProperty(name = "wiremock.port")
+    int wireMockPort;
 
     @Test
     void generatedEndpointExistsAndHandlesPost() {
@@ -53,6 +42,14 @@ class EddiAgentEndpointTest {
                 .body("conversationId", equalTo("conv-wiremock-001"))
                 .body("conversationState", equalTo("READY"))
                 .body("agentResponseParts", hasSize(greaterThan(0)));
+
+        // The @OnMessage hook in SampleAgentEndpoint prefixes the message.
+        WireMock wireMock = new WireMock(wireMockPort);
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/agents/conv-wiremock-001"))
+                .withRequestBody(containing("[hooked] Hello from test!")));
+        // The conversation is started on EDDI for that user
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/agents/test-agent/start"))
+                .withQueryParam("userId", WireMock.equalTo("test-user")));
     }
 
     @Test
@@ -65,5 +62,8 @@ class EddiAgentEndpointTest {
                 .then()
                 .statusCode(200)
                 .body("conversationId", notNullValue());
+
+        new WireMock(wireMockPort).verifyThat(postRequestedFor(urlPathEqualTo("/agents/test-agent/start"))
+                .withQueryParam("userId", WireMock.equalTo("anonymous")));
     }
 }

@@ -8,15 +8,18 @@ import java.lang.annotation.Target;
 /**
  * Marks a method as a post-processing hook that runs after EDDI returns a response.
  * <p>
- * Must be used inside a class annotated with {@link EddiAgent}.
- * The method receives an {@code EddiConversation} and the {@code ConversationResult}.
- * <p>
- * Example:
+ * Must be used inside a class annotated with {@link EddiAgent}. Applies to the
+ * non-streaming endpoint only. Supported signatures:
+ * <ul>
+ * <li>{@code ConversationResult hook(ConversationResult result)} — the returned value replaces the result</li>
+ * <li>{@code void hook(ConversationResult result)} — observe only</li>
+ * </ul>
+ * Any other signature fails the build.
  *
  * <pre>{@code
  * @OnResponse
- * public void postProcess(EddiConversation conv, ConversationResult result) {
- *     metricsService.recordResponse(conv.agentId(), result);
+ * public void postProcess(ConversationResult result) {
+ *     metrics.recordResponse(result);
  * }
  * }</pre>
  */
