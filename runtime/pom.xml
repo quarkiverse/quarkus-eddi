@@ -33,17 +33,28 @@
             <artifactId>quarkus-rest</artifactId>
         </dependency>
 
+        <!--
+            Jackson databind for the ObjectMapper used to parse SSE "done" snapshots.
+            Plain library (not a Quarkus extension), so it needs no deployment counterpart.
+            JavaTimeModule reaches the app's managed ObjectMapper transitively via
+            quarkus-rest-client-jackson → quarkus-jackson.
+        -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
         <!-- Mutiny for reactive types -->
         <dependency>
             <groupId>io.smallrye.reactive</groupId>
             <artifactId>smallrye-mutiny-vertx-core</artifactId>
         </dependency>
 
-        <!-- MCP server for tool bridge (matches EDDI's version) -->
+        <!-- MCP server for tool bridge (matches EDDI v6's quarkus-mcp-server version) -->
         <dependency>
             <groupId>io.quarkiverse.mcp</groupId>
             <artifactId>quarkus-mcp-server-http</artifactId>
-            <version>1.11.0</version>
+            <version>1.13.0</version>
             <optional>true</optional>
         </dependency>
 
@@ -59,11 +70,7 @@
             <artifactId>quarkus-junit5</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <scope>test</scope>
-        </dependency>
+        <!-- jackson-databind is provided at compile scope transitively via quarkus-jackson -->
     </dependencies>
 
     <build>

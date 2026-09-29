@@ -26,7 +26,7 @@
 
 - **No OpenAPI codegen**: EDDI's server uses `AsyncResponse` / `SseEventSink` which codegen can't handle. Client interfaces are hand-crafted for clean Mutiny types.
 - **Client paths mirror EDDI's v6 API**: All under `/agents` (conversations), `/administration` (deploy), `/groups/{groupId}/conversations` (group discussions).
-- **MCP dependency matches EDDI**: Uses `quarkus-mcp-server-http:1.11.0` (same artifact EDDI uses).
+- **MCP dependency matches EDDI**: Uses `quarkus-mcp-server-http:1.13.0` (same artifact/version EDDI v6 uses). The bridge references the `@Tool`/`@ToolArg` annotations by `DotName` (no compile dependency), so this must be kept in sync with EDDI's `quarkus-mcp-server.version`.
 
 ---
 
@@ -80,14 +80,14 @@ The 8 REST client interfaces under `client/` map to EDDI's actual JAX-RS interfa
 
 | SDK Interface | EDDI Interface | Base Path |
 |---|---|---|
-| `EddiAgentRestClient` | `IRestAgentEngine` | `/agents` |
+| `EddiAgentRestClient` | `IRestAgentEngine` | `/agents` (incl. HITL: `/{id}/resume`, `/{id}/approval-status`, `/pending-approvals`, `/{id}/cancel`) |
 | `EddiSetupRestClient` | `IRestAgentSetup` | `/administration/agents` |
-| `EddiGroupRestClient` | `IRestGroupConversation` | `/groups` |
+| `EddiGroupRestClient` | `IRestGroupConversation` | `/groups` (root — per-group routes carry the `/{groupId}/conversations` prefix so the cross-group `/groups/pending-approvals` inbox is reachable) |
 | `EddiAdminRestClient` | `IRestAgentAdministration` | `/administration` |
-| `EddiStreamingRestClient` | `IRestAgentEngine` (SSE) | `/agents` |
-| `EddiManagedRestClient` | `IRestManagedConversation` | `/managed` |
-| `EddiLogRestClient` | `IRestLogAdministration` | `/administration/logs` |
-| `EddiCoordinatorRestClient` | `IRestCoordinatorAdministration` | `/administration/coordinator` |
+| `EddiStreamingRestClient` | `IRestAgentEngineStreaming` | `/agents/{id}/stream` (SSE) |
+| `EddiManagedRestClient` | `IRestAgentManagement` | `/agents/managed` |
+| `EddiLogRestClient` | `IRestLogAdmin` | `/administration/logs` |
+| `EddiCoordinatorRestClient` | `IRestCoordinatorAdmin` | `/administration/coordinator` |
 
 Additionally, `EddiApiKeyFilter` is a `@Provider` that auto-injects `quarkus.eddi.api-key` as a Bearer token on all client requests.
 

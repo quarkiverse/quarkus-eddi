@@ -12,7 +12,9 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
 import io.quarkiverse.eddi.model.Context;
 import io.quarkiverse.eddi.model.ConversationState;
+import io.quarkiverse.eddi.model.HitlDecision;
 import io.quarkiverse.eddi.model.InputData;
+import io.quarkiverse.eddi.model.PendingApprovalSummary;
 import io.smallrye.mutiny.Uni;
 
 /**
@@ -134,4 +136,46 @@ public interface EddiAgentRestClient {
     @POST
     @Path("/{conversationId}/redo")
     Uni<Response> redo(@PathParam("conversationId") String conversationId);
+
+    // --- Cancel ---
+
+    @POST
+    @Path("/{conversationId}/cancel")
+    Uni<Response> cancelConversation(@PathParam("conversationId") String conversationId);
+
+    // --- HITL (Human-in-the-Loop) ---
+
+    /**
+     * Submit a human decision (APPROVED/REJECTED) to resume a conversation that is
+     * in {@code AWAITING_HUMAN} state. Returns 409 if the conversation is not
+     * awaiting approval.
+     */
+    @POST
+    @Path("/{conversationId}/resume")
+    @Consumes(MediaType.APPLICATION_JSON)
+    Uni<Response> resumeConversation(
+            @PathParam("conversationId") String conversationId,
+            HitlDecision decision);
+
+    /**
+     * Get the HITL approval status of a paused conversation. Use
+     * {@code detail=full} for the complete memory snapshot, {@code detail=summary}
+     * (the default) for the pause coordinates only.
+     */
+    @GET
+    @Path("/{conversationId}/approval-status")
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<Response> getApprovalStatus(
+            @PathParam("conversationId") String conversationId,
+            @QueryParam("detail") @DefaultValue("summary") String detail);
+
+    /**
+     * List conversations currently awaiting human approval (bounded by
+     * {@code limit}, server max 1000).
+     */
+    @GET
+    @Path("/pending-approvals")
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<List<PendingApprovalSummary>> listPendingApprovals(
+            @QueryParam("limit") @DefaultValue("200") Integer limit);
 }

@@ -36,6 +36,7 @@ Built for **EDDI v6**. Reactive-first. Typesafe. Zero-config in dev mode.
 | 🔗 | **@EddiAgent** 🧪 | Declarative annotation → auto-generated REST/SSE endpoints at build time *(experimental)* |
 | 🛠️ | **@EddiTool MCP Bridge** | Expose CDI methods as MCP tools EDDI can call back — transparently bridges to `quarkus-mcp-server-http` |
 | 👥 | **Group Discussions** | Multi-agent debates with structured discussion styles |
+| ✋ | **HITL (Human-in-the-Loop)** | Pause on tool/rule approval → `resume`/`approve`/`reject`, poll `approval-status`, and an approvals inbox |
 | 🔐 | **API Key Auth** | Auto-propagated Bearer token via `quarkus.eddi.api-key` |
 | 💚 | **Health Check** | Async readiness probe for EDDI connectivity |
 
@@ -169,6 +170,47 @@ Response result = eddi.group("architect-panel")
     .discuss("Monolith vs microservices?");
 ```
 
+### ✋ Human-in-the-Loop (HITL)
+
+When an agent is configured to gate tool calls (or a behavior rule pauses the turn), the
+conversation stops in the `AWAITING_HUMAN` state. The SDK surfaces the pause and lets a
+reviewer resume it:
+
+```java
+Conversation conv = eddi.agent("support-bot").startConversation();
+ConversationResult result = conv.say("Refund order #4711");
+
+if (result.isAwaitingHuman()) {
+    // Inspect *why* it paused (no tool arguments are exposed)
+    System.out.println("Paused: " + result.hitlPauseType());          // "TOOL_CALL" / "RULE"
+    System.out.println("Pending tools: " + result.hitlPendingToolNames());
+
+    // Approve or reject to resume
+    conv.approve("Verified with the customer");
+    // conv.reject("Not permitted");
+    // conv.resume(HitlDecision.ofToolCalls(HitlVerdict.APPROVED, "partial",
+    //         Map.of("call-1", ToolCallDecision.reject("unsafe"))));
+}
+```
+
+> ⚠️ The one-liner `chat()` / `chatFull()` deliberately **do not** end a conversation left in
+> `AWAITING_HUMAN` (ending it would cancel the pending approval). Resume it via
+> `eddi.agent(id).conversation(result.conversationId())`.
+
+Poll status and build an approvals inbox:
+
+```java
+// Poll a single conversation's approval status (summary | full)
+Response status = conv.approvalStatus();
+
+// Approvals inbox — conversations (and, cross-group, group discussions) awaiting a human
+List<PendingApprovalSummary> pending = eddi.approvals().pending();
+List<PendingApprovalSummary> groupPending = eddi.approvals().pendingGroups();
+
+// Group discussions pause too — approve a paused phase
+eddi.group("architect-panel").approve(groupConversationId, "Ship it");
+```
+
 ---
 
 ## 🔗 @EddiAgent — Declarative Endpoint Wiring 🧪
@@ -274,9 +316,10 @@ The extension ships with a comprehensive test suite:
 
 | | Suite | What It Covers |
 |---|---|---|
-| ✅ | **Unit Tests** | Model records, API key filter, conversation lifecycle, client facade |
-| 🔌 | **WireMock Tests** | Agent endpoint generation, extension bootstrap |
-| 🐳 | **Integration Tests** | Real EDDI server via Testcontainers (`EddiRealServerIT`) |
+| ✅ | **Unit Tests** | Model records (incl. HITL models & `ConversationState`), snapshot parsing, API key filter, conversation lifecycle, client facade |
+| 🔌 | **WireMock Tests** | Full `EddiClient` flow and the HITL round-trip (`AWAITING_HUMAN` → `resume` → `READY`, approvals inbox) against a simulated EDDI v6 server (`EddiExtensionTest`, `EddiHitlTest`) |
+| 🐳 | **Dev Services** | Auto-starts EDDI + MongoDB via **Testcontainers** in dev/test mode |
+| 🌐 | **Real-server IT** | `EddiRealServerIT` runs against a locally running EDDI at `localhost:7070`; **auto-skips** when none is reachable |
 | 🔄 | **CI Matrix** | JDK 21 × {Ubuntu, Windows} |
 
 ---
