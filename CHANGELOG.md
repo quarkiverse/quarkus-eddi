@@ -27,6 +27,12 @@ Verified against **EDDI 6.4.0** (REST contract audit, plus a live run through De
 
 ### Fixed — EDDI 6.4 compatibility
 
+- **SSE streaming never worked** — every streaming client (`sayStreaming`, group
+  discuss/approve/continue streams, log and coordinator tails) declared
+  `Multi<InboundSseEvent>`, which the Quarkus REST client cannot produce; streams failed
+  with a Jackson `InvalidDefinitionException`. They now use `Multi<SseEvent<String>>`.
+- **Generated `@EddiAgent` `/stream` endpoint** no longer blocks the event loop when it
+  starts a conversation (`@Blocking`).
 - **Dev Services could not start EDDI ≥ 6.3** — the container now receives the
   unauthenticated-mode opt-outs (`EDDI_SECURITY_ALLOW_UNAUTHENTICATED`,
   `EDDI_MCP_ALLOW_UNAUTHENTICATED`, `EDDI_SECRETSTORE_ALLOW_UNAUTHENTICATED`) that EDDI's

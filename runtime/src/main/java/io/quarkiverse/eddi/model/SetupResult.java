@@ -36,4 +36,14 @@ public record SetupResult(
         Boolean sentimentAnalysisEnabled,
         Map<String, Object> resources,
         String apiKeyVaultReference) {
+
+    /**
+     * Pre-6.4 constructor, kept for source compatibility.
+     */
+    public SetupResult(String action, String agentId, String agentName, String provider, String model,
+            Boolean deployed, String deploymentStatus, Integer endpointCount, List<String> groups,
+            Boolean quickRepliesEnabled, Boolean sentimentAnalysisEnabled, Map<String, Object> resources) {
+        this(action, agentId, agentName, provider, model, deployed, deploymentStatus, endpointCount, groups,
+                quickRepliesEnabled, sentimentAnalysisEnabled, resources, null);
+    }
 }

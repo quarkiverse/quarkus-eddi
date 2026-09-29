@@ -5,10 +5,11 @@ import java.util.Map;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.sse.InboundSseEvent;
 
 import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import org.jboss.resteasy.reactive.RestStreamElementType;
+import org.jboss.resteasy.reactive.client.SseEvent;
 
 import io.quarkiverse.eddi.model.LogEntry;
 import io.smallrye.mutiny.Multi;
@@ -69,7 +70,8 @@ public interface EddiLogRestClient {
     @GET
     @Path("/stream")
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    Multi<InboundSseEvent> streamLogs(
+    @RestStreamElementType(MediaType.TEXT_PLAIN)
+    Multi<SseEvent<String>> streamLogs(
             @QueryParam("agentId") String agentId,
             @QueryParam("conversationId") String conversationId,
             @QueryParam("level") @DefaultValue("INFO") String level);

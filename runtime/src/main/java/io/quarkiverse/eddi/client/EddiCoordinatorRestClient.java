@@ -4,10 +4,11 @@ import java.util.List;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.sse.InboundSseEvent;
 
 import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import org.jboss.resteasy.reactive.RestStreamElementType;
+import org.jboss.resteasy.reactive.client.SseEvent;
 
 import io.quarkiverse.eddi.model.CoordinatorStatus;
 import io.quarkiverse.eddi.model.DeadLetterEntry;
@@ -72,5 +73,6 @@ public interface EddiCoordinatorRestClient {
     @GET
     @Path("/stream")
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    Multi<InboundSseEvent> streamEvents();
+    @RestStreamElementType(MediaType.TEXT_PLAIN)
+    Multi<SseEvent<String>> streamEvents();
 }

@@ -141,13 +141,8 @@ public class Conversation {
      */
     public Multi<StreamToken> sayStreaming(InputData inputData) {
         return streamingClient.sayStreaming(conversationId, false, true, null, inputData)
-                .map(sseEvent -> {
-                    String eventName = sseEvent.getName();
-                    String data = sseEvent.readData();
-                    // Default to "token" if the server sends an unnamed event
-                    String type = (eventName != null && !eventName.isEmpty()) ? eventName : "token";
-                    return new StreamToken(type, data);
-                });
+                // Unnamed events default to "token"
+                .map(EddiClient::toStreamToken);
     }
 
     /**
@@ -347,7 +342,7 @@ public class Conversation {
      * Cancel this conversation (blocking, 30s timeout).
      */
     public void cancel() {
-        cancelAsync().await().atMost(DEFAULT_TIMEOUT);
+        cancelAsync().await().atMost(DEFAULT_TIMEOUT).close();
     }
 
     // ─── Admin: state reset ───────────────────────

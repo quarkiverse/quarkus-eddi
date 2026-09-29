@@ -6,10 +6,11 @@ import java.util.Map;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.sse.InboundSseEvent;
 
 import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import org.jboss.resteasy.reactive.RestStreamElementType;
+import org.jboss.resteasy.reactive.client.SseEvent;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -56,7 +57,8 @@ public interface EddiGroupRestClient {
     @Path("/{groupId}/conversations/stream")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    Multi<InboundSseEvent> discussStreaming(
+    @RestStreamElementType(MediaType.TEXT_PLAIN)
+    Multi<SseEvent<String>> discussStreaming(
             @PathParam("groupId") String groupId,
             DiscussRequest request);
 
@@ -126,7 +128,8 @@ public interface EddiGroupRestClient {
     @Path("/{groupId}/conversations/{groupConversationId}/continue/stream")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    Multi<InboundSseEvent> continueDiscussionStreaming(
+    @RestStreamElementType(MediaType.TEXT_PLAIN)
+    Multi<SseEvent<String>> continueDiscussionStreaming(
             @PathParam("groupId") String groupId,
             @PathParam("groupConversationId") String groupConversationId,
             DiscussRequest request);
@@ -176,7 +179,8 @@ public interface EddiGroupRestClient {
     @Path("/{groupId}/conversations/{groupConversationId}/approve/stream")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    Multi<InboundSseEvent> approveGroupPhaseStreaming(
+    @RestStreamElementType(MediaType.TEXT_PLAIN)
+    Multi<SseEvent<String>> approveGroupPhaseStreaming(
             @PathParam("groupId") String groupId,
             @PathParam("groupConversationId") String groupConversationId,
             GroupApprovalRequest request);

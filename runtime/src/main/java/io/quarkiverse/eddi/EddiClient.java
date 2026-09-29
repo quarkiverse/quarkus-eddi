@@ -9,10 +9,10 @@ import java.util.Map;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.sse.InboundSseEvent;
 
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.client.SseEvent;
 
 import io.quarkiverse.eddi.client.*;
 import io.quarkiverse.eddi.client.EddiGroupRestClient.AttachmentRef;
@@ -514,7 +514,7 @@ public class EddiClient {
         }
 
         public void cancel(String groupConversationId) {
-            cancelAsync(groupConversationId).await().atMost(DEFAULT_TIMEOUT);
+            cancelAsync(groupConversationId).await().atMost(DEFAULT_TIMEOUT).close();
         }
 
         // ─── HITL approvals ───────────────────────
@@ -871,9 +871,9 @@ public class EddiClient {
      * Map a raw SSE event to a {@link StreamToken}, preserving the server's event
      * name (defaulting to {@code token} for unnamed events).
      */
-    static StreamToken toStreamToken(InboundSseEvent sseEvent) {
-        String eventName = sseEvent.getName();
-        String data = sseEvent.readData();
+    static StreamToken toStreamToken(SseEvent<String> sseEvent) {
+        String eventName = sseEvent.name();
+        String data = sseEvent.data();
         String type = (eventName != null && !eventName.isEmpty()) ? eventName : "token";
         return new StreamToken(type, data);
     }

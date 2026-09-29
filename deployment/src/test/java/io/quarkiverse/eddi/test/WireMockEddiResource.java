@@ -143,9 +143,9 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
                         .withBody("[]")));
 
         // --- SSE Streaming ---
-        // POST /agents/conv-wiremock-001/stream with text/plain → SSE events
+        // POST /agents/conv-wiremock-001/stream with JSON InputData → SSE events
         stubFor(post(urlPathEqualTo("/agents/conv-wiremock-001/stream"))
-                .withHeader("Content-Type", containing("text/plain"))
+                .withHeader("Content-Type", containing("application/json"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "text/event-stream")

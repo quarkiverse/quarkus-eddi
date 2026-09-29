@@ -102,9 +102,10 @@ public class EddiAgentAnnotationProcessor {
             boolean validParams = hook.parametersCount() == 1
                     && hook.parameterType(0).name().toString().equals(paramType);
             boolean validReturn = returnType.equals("void") || returnType.equals(paramType);
-            if (!validParams || !validReturn || !java.lang.reflect.Modifier.isPublic(hook.flags())) {
+            if (!validParams || !validReturn || !java.lang.reflect.Modifier.isPublic(hook.flags())
+                    || java.lang.reflect.Modifier.isStatic(hook.flags())) {
                 throw new IllegalStateException(String.format(
-                        "%s method %s.%s must be public and have the signature `void|%s name(%s)`",
+                        "%s method %s.%s must be public, non-static and have the signature `void|%s name(%s)`",
                         annotation, hook.declaringClass().name(), hook.name(), paramType, paramType));
             }
         }
@@ -265,6 +266,9 @@ public class EddiAgentAnnotationProcessor {
                 io.smallrye.mutiny.Multi.class, String.class, String.class)) {
             method.addAnnotation("jakarta.ws.rs.POST");
             method.addAnnotation("jakarta.ws.rs.Path").addValue("value", "/stream");
+            // A Multi return type would run on the event loop, but starting the
+            // conversation (and user hooks) blocks — run on a worker thread.
+            method.addAnnotation("io.smallrye.common.annotation.Blocking");
             method.addAnnotation("jakarta.ws.rs.Consumes").addValue("value", new String[] { "text/plain" });
             method.addAnnotation("jakarta.ws.rs.Produces").addValue("value", new String[] { "text/event-stream" });
 
