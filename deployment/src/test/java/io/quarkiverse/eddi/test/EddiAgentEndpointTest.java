@@ -44,8 +44,12 @@ class EddiAgentEndpointTest {
                 .body("agentResponseParts", hasSize(greaterThan(0)));
 
         // The @OnMessage hook in SampleAgentEndpoint prefixes the message.
-        new WireMock(wireMockPort).verifyThat(postRequestedFor(urlPathEqualTo("/agents/conv-wiremock-001"))
+        WireMock wireMock = new WireMock(wireMockPort);
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/agents/conv-wiremock-001"))
                 .withRequestBody(containing("[hooked] Hello from test!")));
+        // The conversation is started on EDDI for that user
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/agents/test-agent/start"))
+                .withQueryParam("userId", WireMock.equalTo("test-user")));
     }
 
     @Test
@@ -58,5 +62,8 @@ class EddiAgentEndpointTest {
                 .then()
                 .statusCode(200)
                 .body("conversationId", notNullValue());
+
+        new WireMock(wireMockPort).verifyThat(postRequestedFor(urlPathEqualTo("/agents/test-agent/start"))
+                .withQueryParam("userId", WireMock.equalTo("anonymous")));
     }
 }

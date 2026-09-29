@@ -134,7 +134,7 @@ class ConversationTest {
         assertTrue(result.isAwaitingHuman());
         assertFalse(result.isEnded());
         assertEquals("TOOL_CALL", result.hitlPauseType());
-        assertNotNull(result.hitlPausedAt());
+        assertEquals(java.time.Instant.parse("2026-07-05T10:15:30Z"), result.hitlPausedAt());
         assertEquals(List.of("lookupOrder", "refund"), result.hitlPendingToolNames());
         assertTrue(result.undoAvailable());
         assertFalse(result.redoAvailable());
@@ -142,9 +142,8 @@ class ConversationTest {
 
     @Test
     void toConversationResult_hitlPausedAtFromNumericEpochSeconds() {
-        // The server serializes Instant as a fractional epoch-SECONDS number
-        // (write-dates-as-timestamps=true), which arrives in the generic snapshot
-        // map as a Double — not an ISO string.
+        // EDDI 6.4 REST sends ISO-8601 strings; numeric epoch seconds (older servers)
+        // arrive in the generic snapshot map as a Double and must still parse.
         Map<String, Object> snapshot = Map.of(
                 "conversationId", "conv-1",
                 "conversationState", "AWAITING_HUMAN",

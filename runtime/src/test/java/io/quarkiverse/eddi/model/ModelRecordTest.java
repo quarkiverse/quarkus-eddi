@@ -376,7 +376,7 @@ class ModelRecordTest {
     void pendingApprovalSummaryFields() {
         PendingApprovalSummary summary = new PendingApprovalSummary(
                 "conv-1", "agent-1", null, "user-1", null,
-                "tool approval required", "REJECT", null, "TOOL_CALL",
+                "tool approval required", "AUTO_REJECT", null, "TOOL_CALL",
                 List.of("lookupOrder"), null);
 
         assertEquals("conv-1", summary.conversationId());
@@ -395,7 +395,7 @@ class ModelRecordTest {
                     "agentId": "agent-1",
                     "userId": "user-1",
                     "pauseReason": "rule paused",
-                    "timeoutPolicy": "REJECT",
+                    "timeoutPolicy": "AUTO_REJECT",
                     "pauseType": "RULE",
                     "toolNames": []
                 }

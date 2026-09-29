@@ -40,7 +40,8 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
         stubFor(post(urlPathMatching("/agents/[^/]+/start"))
                 .willReturn(aResponse()
                         .withStatus(201)
-                        .withHeader("Location", wireMockServer.baseUrl() + "/agents/conv-wiremock-001")));
+                        .withHeader("Location",
+                                "eddi://ai.labs.conversation/conversationstore/conversations/conv-wiremock-001")));
 
         // --- Say (text/plain) ---
         // POST /agents/{conversationId} with Content-Type: text/plain → 200 with snapshot.
@@ -178,7 +179,8 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
         stubFor(post(urlPathEqualTo("/agents/hitl-agent/start"))
                 .willReturn(aResponse()
                         .withStatus(201)
-                        .withHeader("Location", wireMockServer.baseUrl() + "/agents/conv-hitl-001")));
+                        .withHeader("Location",
+                                "eddi://ai.labs.conversation/conversationstore/conversations/conv-hitl-001")));
 
         // Say to the HITL conversation → server pauses awaiting a human decision
         stubFor(post(urlPathEqualTo("/agents/conv-hitl-001"))
@@ -190,7 +192,7 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
                                     "conversationId": "conv-hitl-001",
                                     "conversationState": "AWAITING_HUMAN",
                                     "hitlPauseType": "TOOL_CALL",
-                                    "hitlPausedAt": 1719964800.123,
+                                    "hitlPausedAt": "2024-07-03T00:00:00.123Z",
                                     "hitlPendingToolCalls": {
                                         "calls": [
                                             {"callId": "c1", "toolName": "lookupOrder"}
@@ -226,22 +228,18 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
                         .withBody("""
                                 {
                                     "conversationId": "conv-hitl-001",
-                                    "conversationState": "AWAITING_HUMAN",
-                                    "pauseType": "TOOL_CALL"
+                                    "state": "AWAITING_HUMAN",
+                                    "pausedAt": "2024-07-03T00:00:00.123Z",
+                                    "pauseReason": "tool approval required",
+                                    "timeoutPolicy": "AUTO_REJECT",
+                                    "approvalTimeout": null,
+                                    "pauseDetails": {}
                                 }
                                 """)));
 
-        // Resume with a human decision → 200, conversation advances to READY
+        // Resume with a human decision → 200 with no body (RestAgentEngine.resume)
         stubFor(post(urlPathEqualTo("/agents/conv-hitl-001/resume"))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "conversationId": "conv-hitl-001",
-                                    "conversationState": "READY"
-                                }
-                                """)));
+                .willReturn(aResponse().withStatus(200)));
 
         // Cancel the paused conversation → 200
         stubFor(post(urlPathEqualTo("/agents/conv-hitl-001/cancel"))
@@ -264,9 +262,9 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
                                         "conversationId": "conv-hitl-001",
                                         "agentId": "hitl-agent",
                                         "userId": "user-1",
-                                        "pausedAt": 1719964800.123,
+                                        "pausedAt": "2024-07-03T00:00:00.123Z",
                                         "pauseReason": "tool approval required",
-                                        "timeoutPolicy": "REJECT",
+                                        "timeoutPolicy": "AUTO_REJECT",
                                         "pauseType": "TOOL_CALL",
                                         "toolNames": ["lookupOrder"]
                                     }
@@ -280,8 +278,78 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
                         .withHeader("Content-Type", "application/json")
                         .withBody("[]")));
 
-        // --- Group conversation lifecycle (followup / continue / close / human-input) ---
-        stubFor(post(urlPathMatching("/groups/group-1/conversations/gc-1/(followup|continue|close|human-input)"))
+        // --- SSE: a streamed turn that pauses for approval (done omits the HITL details) ---
+        stubFor(post(urlPathEqualTo("/agents/conv-hitl-001/stream"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "text/event-stream")
+                        .withBody(
+                                """
+                                        event: tool_call
+                                        data: {"tool":"lookupOrder"}
+
+                                        event: done
+                                        data: {"conversationState":"AWAITING_HUMAN","hitlPausedAt":"2024-07-03T00:00:00.123Z","conversationOutputs":[{"output":[{"type":"text","text":"I need approval."}]}]}
+
+                                        """)));
+        // ...so the SDK reads them from the conversation snapshot
+        stubFor(get(urlPathEqualTo("/agents/conv-hitl-001"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {
+                                    "conversationId": "conv-hitl-001",
+                                    "conversationState": "AWAITING_HUMAN",
+                                    "hitlPauseType": "TOOL_CALL",
+                                    "hitlPausedAt": "2024-07-03T00:00:00.123Z",
+                                    "hitlPendingToolCalls": {"calls": [{"toolName": "lookupOrder"}]}
+                                }
+                                """)));
+
+        // --- SSE: typed error event (input sent into a paused conversation) ---
+        stubFor(post(urlPathEqualTo("/agents/conv-busy-001/stream"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "text/event-stream")
+                        .withBody("""
+                                event: error
+                                data: {"message":"Conversation is awaiting approval","code":"awaiting_approval"}
+
+                                """)));
+
+        // --- SSE: group discussion progress ---
+        stubFor(post(urlPathEqualTo("/groups/group-1/conversations/stream"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "text/event-stream")
+                        .withBody("""
+                                event: group_start
+                                data: {"groupConversationId":"gc-1"}
+
+                                event: speaker_complete
+                                data: {"speaker":"Rosa","response":"Monolith."}
+
+                                event: group_complete
+                                data: {"state":"COMPLETED"}
+
+                                """)));
+
+        // --- SSE: log live tail with a heartbeat comment frame (RestLogAdmin) ---
+        stubFor(get(urlPathEqualTo("/administration/logs/stream"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "text/event-stream")
+                        .withBody("""
+                                :heartbeat
+
+                                event: log
+                                data: {"level":"INFO","message":"hello"}
+
+                                """)));
+
+        // --- Group conversation lifecycle (followup / continue / close / human-input / approve) ---
+        stubFor(post(urlPathMatching("/groups/group-1/conversations/gc-1/(followup|continue|close|human-input|approve)"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
@@ -296,8 +364,8 @@ public class WireMockEddiResource implements QuarkusTestResourceLifecycleManager
         stubFor(post(urlPathEqualTo("/agents/non-existent-agent/start"))
                 .willReturn(aResponse()
                         .withStatus(404)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"error\":\"Agent not found\"}")));
+                        .withHeader("Content-Type", "text/plain")
+                        .withBody("Agent is not deployed or not ready")));
 
         // Simulate server error for a specific conversation
         stubFor(post(urlPathEqualTo("/agents/error-conv/start"))

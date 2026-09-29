@@ -1,6 +1,7 @@
 package io.quarkiverse.eddi.test;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -117,6 +118,8 @@ class EddiHitlTest {
         try (Response response = conv.approvalStatus()) {
             assertEquals(200, response.getStatus());
         }
+        wireMock.verifyThat(getRequestedFor(urlPathEqualTo("/agents/conv-hitl-001/approval-status"))
+                .withQueryParam("detail", equalTo("summary")));
     }
 
     @Test

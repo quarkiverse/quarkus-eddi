@@ -1,6 +1,7 @@
 package io.quarkiverse.eddi.test;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
@@ -20,6 +21,7 @@ import com.github.tomakehurst.wiremock.client.WireMock;
 
 import io.quarkiverse.eddi.EddiClient;
 import io.quarkiverse.eddi.client.EddiGroupRestClient.AttachmentRef;
+import io.quarkiverse.eddi.model.HitlDecision;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 
@@ -85,5 +87,26 @@ class EddiGroupTest {
         eddi.agent("any").conversation("conv-wiremock-001").resetState();
         wireMock.verifyThat(patchRequestedFor(urlPathEqualTo("/agents/conv-wiremock-001/state"))
                 .withQueryParam("state", equalTo("READY")));
+    }
+
+    @Test
+    void approveSendsDecisionAndPendingApprovalsUsesServerDefaults() {
+        try (Response response = eddi.group("group-1").approve("gc-1", HitlDecision.approve("ship it"))) {
+            assertEquals(200, response.getStatus());
+        }
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/groups/group-1/conversations/gc-1/approve"))
+                .withRequestBody(matchingJsonPath("$.decision.verdict", equalTo("APPROVED")))
+                .withRequestBody(matchingJsonPath("$.decision.note", equalTo("ship it"))));
+
+        assertTrue(eddi.approvals().pendingGroups().isEmpty());
+        wireMock.verifyThat(getRequestedFor(urlPathEqualTo("/groups/pending-approvals"))
+                .withQueryParam("limit", equalTo("100")));
+    }
+
+    @Test
+    void chatEndsTheConversationItStarted() {
+        wireMock.resetRequests();
+        assertFalse(eddi.chat("any-agent", "Hello").isBlank());
+        wireMock.verifyThat(1, postRequestedFor(urlPathEqualTo("/agents/conv-wiremock-001/endConversation")));
     }
 }

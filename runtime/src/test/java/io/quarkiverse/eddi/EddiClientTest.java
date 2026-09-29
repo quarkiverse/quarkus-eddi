@@ -12,6 +12,13 @@ class EddiClientTest {
     // --- extractIdFromUri ---
 
     @Test
+    void extractIdFromUri_eddiResourceUri() {
+        // The Location header EDDI 6.4 actually returns for a started conversation
+        assertEquals("abc", EddiClient.extractIdFromUri(
+                "eddi://ai.labs.conversation/conversationstore/conversations/abc?version=1"));
+    }
+
+    @Test
     void extractIdFromUri_validAbsoluteUri() {
         String id = EddiClient.extractIdFromUri("http://localhost:7070/agents/abc-123");
         assertEquals("abc-123", id);

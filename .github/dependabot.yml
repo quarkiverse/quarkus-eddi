@@ -7,10 +7,6 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
-    ignore:
-      # Quarkus version is managed by the Quarkiverse parent POM
-      - dependency-name: "io.quarkus:quarkus-bom"
-      - dependency-name: "io.quarkiverse:quarkiverse-parent"
 
   - package-ecosystem: "github-actions"
     directory: "/"

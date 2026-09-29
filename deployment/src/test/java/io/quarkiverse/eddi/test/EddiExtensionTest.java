@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 
 import jakarta.inject.Inject;
+import jakarta.ws.rs.WebApplicationException;
 
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -168,29 +169,29 @@ class EddiExtensionTest {
     @Test
     @Order(40)
     void startConversationWithNonExistentAgentThrows() {
-        assertThrows(Exception.class, () -> eddi.agent("non-existent-agent").startConversation(),
-                "Starting a conversation with a non-existent agent should throw");
+        var e = assertThrows(WebApplicationException.class, () -> eddi.agent("non-existent-agent").startConversation());
+        assertEquals(404, e.getResponse().getStatus());
     }
 
     @Test
     @Order(41)
     void startConversationServerErrorThrows() {
-        assertThrows(Exception.class, () -> eddi.agent("error-conv").startConversation(),
-                "Server 500 error should propagate as an exception");
+        var e = assertThrows(WebApplicationException.class, () -> eddi.agent("error-conv").startConversation());
+        assertEquals(500, e.getResponse().getStatus());
     }
 
     @Test
     @Order(42)
     void chatWithNonExistentAgentThrows() {
-        assertThrows(Exception.class, () -> eddi.chat("non-existent-agent", "Hello"),
-                "chat() with a non-existent agent should throw");
+        var e = assertThrows(WebApplicationException.class, () -> eddi.chat("non-existent-agent", "Hello"));
+        assertEquals(404, e.getResponse().getStatus());
     }
 
     @Test
     @Order(43)
     void chatAsyncWithNonExistentAgentFails() {
-        assertThrows(Exception.class,
-                () -> eddi.chatAsync("non-existent-agent", "Hello").await().indefinitely(),
-                "chatAsync() with a non-existent agent should fail");
+        var e = assertThrows(WebApplicationException.class,
+                () -> eddi.chatAsync("non-existent-agent", "Hello").await().indefinitely());
+        assertEquals(404, e.getResponse().getStatus());
     }
 }
