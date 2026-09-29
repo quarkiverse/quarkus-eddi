@@ -126,7 +126,8 @@ public class Conversation {
      * Send a message and receive a streaming response.
      * <p>
      * Returns a {@link Multi} of {@link StreamToken} events. Token types include:
-     * {@code task_start}, {@code task_complete}, {@code token}, {@code done}, {@code error}.
+     * {@code task_start}, {@code task_complete}, {@code task_failed}, {@code tool_call},
+     * {@code token}, {@code done}, {@code error} (see {@link StreamToken}).
      * <p>
      * The SSE event name is preserved from the server, so {@code isToken()},
      * {@code isDone()}, {@code isError()} etc. work correctly.
@@ -161,22 +162,54 @@ public class Conversation {
      */
     public Cancellable sayStreaming(String message, StreamListener listener) {
         return sayStreaming(message)
-                .subscribe().with(
-                        token -> {
-                            if (token.isToken()) {
-                                listener.onToken(token.text());
-                            } else if (token.isTaskStart()) {
-                                listener.onTaskStart(token.text(), token.type(), 0);
-                            } else if (token.isTaskComplete()) {
-                                listener.onTaskComplete(token.text(), token.type(), 0);
-                            } else if (token.isDone()) {
-                                // Parse the done event data into a ConversationResult
-                                listener.onComplete(parseDoneEvent(token.text()));
-                            } else if (token.isError()) {
-                                listener.onError(new RuntimeException(token.text()));
-                            }
-                        },
-                        listener::onError);
+                .subscribe().with(token -> dispatch(token, listener), listener::onError);
+    }
+
+    void dispatch(StreamToken token, StreamListener listener) {
+        if (token.isToken()) {
+            listener.onToken(token.text());
+        } else if (token.isTaskStart()) {
+            Map<String, Object> event = parseJson(token.text());
+            listener.onTaskStart(str(event, "taskId"), str(event, "taskType"), (int) num(event, "index"));
+        } else if (token.isTaskComplete()) {
+            Map<String, Object> event = parseJson(token.text());
+            listener.onTaskComplete(str(event, "taskId"), str(event, "taskType"), num(event, "durationMs"));
+        } else if (token.isTaskFailed()) {
+            Map<String, Object> event = parseJson(token.text());
+            listener.onTaskFailed(str(event, "taskId"), str(event, "taskType"), num(event, "durationMs"),
+                    str(event, "errorType"), str(event, "error"));
+        } else if (token.isToolCall()) {
+            listener.onToolCall(str(parseJson(token.text()), "tool"));
+        } else if (token.isDone()) {
+            ConversationResult result = parseDoneEvent(token.text());
+            if (result.isAwaitingHuman()) {
+                // The done payload has no pause type / pending tools; read them.
+                completePausedResult(result).subscribe().with(listener::onComplete, listener::onError);
+            } else {
+                listener.onComplete(result);
+            }
+        } else if (token.isError()) {
+            listener.onError(parseErrorEvent(token.text()));
+        } else {
+            listener.onEvent(token);
+        }
+    }
+
+    /**
+     * Re-read a paused conversation to fill in the HITL details the streaming
+     * {@code done} event omits, falling back to the streamed result on failure.
+     */
+    Uni<ConversationResult> completePausedResult(ConversationResult streamed) {
+        return agentClient.readConversation(conversationId, false, true, null)
+                .map(snapshot -> {
+                    ConversationResult full = toConversationResult(snapshot);
+                    return new ConversationResult(conversationId, streamed.agentResponse(),
+                            streamed.agentResponseParts(), streamed.quickReplies(), streamed.actions(),
+                            streamed.conversationState(), full.hitlPauseType(),
+                            streamed.hitlPausedAt() != null ? streamed.hitlPausedAt() : full.hitlPausedAt(),
+                            full.hitlPendingToolNames(), full.undoAvailable(), full.redoAvailable());
+                })
+                .onFailure().recoverWithItem(streamed);
     }
 
     // ─── Rerun ────────────────────────────────────
@@ -527,10 +560,39 @@ public class Conversation {
         }
     }
 
+    static EddiStreamException parseErrorEvent(String data) {
+        Map<String, Object> event = parseJson(data);
+        if (event.isEmpty()) {
+            return new EddiStreamException(null, data);
+        }
+        return new EddiStreamException(str(event, "code"), str(event, "message"));
+    }
+
+    private static Map<String, Object> parseJson(String data) {
+        if (data == null || data.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return MAPPER.readValue(data, new TypeReference<Map<String, Object>>() {
+            });
+        } catch (Exception notJson) {
+            return Map.of();
+        }
+    }
+
+    private static String str(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    private static long num(Map<String, Object> map, String key) {
+        return map.get(key) instanceof Number n ? n.longValue() : 0L;
+    }
+
     /**
      * Parse the "done" SSE event into a {@link ConversationResult}.
      * <p>
-     * The done event data is the full conversation snapshot as JSON. We parse it
+     * The done event data is a reduced conversation snapshot as JSON. We parse it
      * through {@link #toConversationResult(Map)} so the listener receives the same
      * structured result (text, quick replies, actions, HITL metadata) as the
      * non-streaming path. If the data is not JSON, it is surfaced as raw response
