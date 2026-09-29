@@ -14,12 +14,12 @@ import io.quarkiverse.eddi.annotations.OnMessage;
 import io.quarkiverse.eddi.annotations.OnResponse;
 import io.quarkiverse.eddi.model.ConversationResult;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
-import io.quarkus.arc.deployment.GeneratedBeanBuildItem;
-import io.quarkus.arc.deployment.GeneratedBeanGizmoAdaptor;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.gizmo.*;
+import io.quarkus.resteasy.reactive.spi.GeneratedJaxRsResourceBuildItem;
+import io.quarkus.resteasy.reactive.spi.GeneratedJaxRsResourceGizmoAdaptor;
 
 /**
  * Build step processor that scans for {@link EddiAgent} annotations and generates
@@ -47,7 +47,7 @@ public class EddiAgentAnnotationProcessor {
 
     @BuildStep
     void processEddiAgentAnnotations(CombinedIndexBuildItem combinedIndex,
-            BuildProducer<GeneratedBeanBuildItem> generatedBeanProducer,
+            BuildProducer<GeneratedJaxRsResourceBuildItem> generatedResourceProducer,
             BuildProducer<AdditionalBeanBuildItem> additionalBeans) {
 
         var index = combinedIndex.getIndex();
@@ -76,8 +76,10 @@ public class EddiAgentAnnotationProcessor {
             List<MethodInfo> onResponseMethods = classInfo.methods().stream()
                     .filter(m -> m.hasAnnotation(ON_RESPONSE))
                     .toList();
+            validateHooks(onMessageMethods, "@OnMessage", String.class.getName());
+            validateHooks(onResponseMethods, "@OnResponse", ConversationResult.class.getName());
 
-            generateResourceClass(generatedBeanProducer, generatedName, classInfo,
+            generateResourceClass(generatedResourceProducer, generatedName, classInfo,
                     agentId, pathValue, streaming, environment,
                     onMessageMethods, onResponseMethods);
 
@@ -90,12 +92,33 @@ public class EddiAgentAnnotationProcessor {
         }
     }
 
-    private void generateResourceClass(BuildProducer<GeneratedBeanBuildItem> producer,
+    /**
+     * Hooks must take exactly one parameter of {@code paramType} and return either
+     * {@code void} or {@code paramType}. Fail the build instead of silently skipping.
+     */
+    private static void validateHooks(List<MethodInfo> hooks, String annotation, String paramType) {
+        for (MethodInfo hook : hooks) {
+            String returnType = hook.returnType().name().toString();
+            boolean validParams = hook.parametersCount() == 1
+                    && hook.parameterType(0).name().toString().equals(paramType);
+            boolean validReturn = returnType.equals("void") || returnType.equals(paramType);
+            if (!validParams || !validReturn || !java.lang.reflect.Modifier.isPublic(hook.flags())) {
+                throw new IllegalStateException(String.format(
+                        "%s method %s.%s must be public and have the signature `void|%s name(%s)`",
+                        annotation, hook.declaringClass().name(), hook.name(), paramType, paramType));
+            }
+        }
+    }
+
+    private void generateResourceClass(BuildProducer<GeneratedJaxRsResourceBuildItem> producer,
             String generatedName, ClassInfo annotatedClass,
             String agentId, String pathValue, boolean streaming, String environment,
             List<MethodInfo> onMessageMethods, List<MethodInfo> onResponseMethods) {
 
-        var adaptor = new GeneratedBeanGizmoAdaptor(producer);
+        // Emit via Quarkus REST's generated-resource SPI (not GeneratedBeanBuildItem):
+        // only then does Quarkus REST index the class as a JAX-RS resource and
+        // register it as a bean, like Panache REST Data does for its resources.
+        var adaptor = new GeneratedJaxRsResourceGizmoAdaptor(producer);
 
         try (ClassCreator creator = ClassCreator.builder()
                 .classOutput(adaptor)
@@ -109,14 +132,18 @@ public class EddiAgentAnnotationProcessor {
 
             // Inject EddiClient
             FieldCreator eddiClientField = creator.getFieldCreator("eddiClient", EddiClient.class);
+            // Package-private: ArC's generated _Bean class injects fields directly
+            // and cannot write to private fields of a generated class.
+            eddiClientField.setModifiers(0);
             eddiClientField.addAnnotation("jakarta.inject.Inject");
 
             // Inject the annotated class (for hook invocation)
             FieldCreator hookBeanField = creator.getFieldCreator("hookBean", annotatedClass.name().toString());
+            hookBeanField.setModifiers(0);
             hookBeanField.addAnnotation("jakarta.inject.Inject");
 
             // Per-user conversation map with LRU eviction
-            creator.getFieldCreator("conversations", BoundedConversationMap.class);
+            creator.getFieldCreator("conversations", BoundedConversationMap.class).setModifiers(0);
 
             // Generate init method to initialize the map
             generateInitMethod(creator);

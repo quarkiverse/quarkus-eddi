@@ -8,15 +8,17 @@ import java.lang.annotation.Target;
 /**
  * Marks a method as a pre-processing hook that runs before each message is sent to EDDI.
  * <p>
- * Must be used inside a class annotated with {@link EddiAgent}.
- * The method receives an {@code EddiConversation} and the user's message string.
- * <p>
- * Example:
+ * Must be used inside a class annotated with {@link EddiAgent}. Supported signatures:
+ * <ul>
+ * <li>{@code String hook(String message)} — the returned value replaces the message</li>
+ * <li>{@code void hook(String message)} — observe only</li>
+ * </ul>
+ * Any other signature fails the build.
  *
  * <pre>{@code
  * @OnMessage
- * public void preProcess(EddiConversation conv, String message) {
- *     conv.addContext("language", detectLanguage(message));
+ * public String preProcess(String message) {
+ *     return message.strip();
  * }
  * }</pre>
  */

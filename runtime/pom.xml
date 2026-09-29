@@ -27,10 +27,10 @@
             <artifactId>quarkus-rest-client-jackson</artifactId>
         </dependency>
 
-        <!-- SSE support for streaming -->
+        <!-- Server side for @EddiAgent endpoints (SSE + JSON responses) -->
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-rest</artifactId>
+            <artifactId>quarkus-rest-jackson</artifactId>
         </dependency>
 
         <!--

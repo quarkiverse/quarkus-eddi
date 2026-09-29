@@ -8,12 +8,6 @@ import java.lang.annotation.Target;
 /**
  * Declaratively wire an EDDI agent to a REST/SSE endpoint in your Quarkus app.
  * <p>
- * <b>⚠️ Experimental:</b> This feature uses Gizmo bytecode generation to create JAX-RS
- * resources at build time. Due to a known limitation in RESTEasy Reactive
- * ({@code GeneratedBeanBuildItem} classes are not recognized as application archive resources),
- * the generated endpoints may not be fully functional in all deployment scenarios.
- * This is tracked for resolution in a future release.
- * <p>
  * At build time, the deployment module scans for classes annotated with {@code @EddiAgent}
  * and generates JAX-RS resources that proxy requests to the specified EDDI agent.
  * <p>
@@ -25,9 +19,9 @@ import java.lang.annotation.Target;
  *     &#64;EddiAgent(id = "support-bot", path = "/api/support", streaming = true)
  *     public class SupportEndpoint {
  *
- *         &#64;OnMessage
- *         public void preProcess(EddiConversation conv, String message) {
- *             conv.addContext("department", "engineering");
+ *         @OnMessage
+ *         public String preProcess(String message) {
+ *             return message.strip();
  *         }
  *     }
  * }
@@ -38,8 +32,8 @@ import java.lang.annotation.Target;
  * <li>{@code POST /api/support} — sends a message and returns the full response</li>
  * <li>{@code POST /api/support/stream} — SSE streaming variant (if {@code streaming = true})</li>
  * </ul>
- *
- * @see <a href="https://github.com/quarkiverse/quarkus-eddi/issues">Tracking issue</a>
+ * Both accept a {@code text/plain} body and an optional {@code userId} query parameter
+ * (default {@code anonymous}); each user keeps one EDDI conversation.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -47,13 +41,11 @@ public @interface EddiAgent {
 
     /**
      * EDDI agent ID to proxy requests to.
-     * Can be overridden via {@code quarkus.eddi.agents.<ClassName>.id}.
      */
     String id();
 
     /**
      * REST path for the generated endpoint.
-     * Can be overridden via {@code quarkus.eddi.agents.<ClassName>.path}.
      */
     String path();
 
